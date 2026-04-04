@@ -1,0 +1,20 @@
+{
+  "layer": "gold",
+  "analytics_time": "2026-02-02T18:27:54.718857",
+  "endpoint": "extract_news",
+  "data_type": "single_article",
+  "metrics": {
+    "endpoint": "extract_news",
+    "total_articles": 0,
+    "sentiment_distribution": {
+      "positive": 0,
+      "neutral": 0,
+      "negative": 0
+    },
+    "category_breakdown": {},
+    "top_sources": []
+  },
+  "data_quality": {
+    "no_data": true
+  }
+}

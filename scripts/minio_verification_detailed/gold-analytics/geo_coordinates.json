@@ -1,0 +1,34 @@
+{
+  "layer": "gold",
+  "analytics_time": "2026-02-02T18:27:54.469211",
+  "endpoint": "geo_coordinates",
+  "data_type": "geolocation",
+  "metrics": {
+    "endpoint": "geo_coordinates",
+    "total_articles": 1,
+    "sentiment_distribution": {
+      "positive": 0,
+      "neutral": 1,
+      "negative": 0
+    },
+    "category_breakdown": {
+      "geolocation": 1
+    },
+    "top_sources": [
+      {
+        "name": "Geo API",
+        "count": 1
+      }
+    ]
+  },
+  "location_data": {
+    "city": "Bengaluru, Karnataka",
+    "latitude": 12.9628669,
+    "longitude": 77.57750899999999,
+    "coordinates": "12.9628669,77.57750899999999"
+  },
+  "data_quality": {
+    "has_coordinates": true,
+    "has_city": true
+  }
+}

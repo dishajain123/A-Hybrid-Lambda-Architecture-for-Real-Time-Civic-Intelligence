@@ -1,0 +1,13 @@
+{
+  "layer": "silver",
+  "processed_time": "2026-02-02T18:27:54.356055",
+  "endpoint": "system_healthcheck",
+  "source_timestamp": "2026-02-02T18:22:54.128063",
+  "cleaned_data": {
+    "type": "healthcheck",
+    "status": "initializing",
+    "timestamp": null,
+    "services": {},
+    "message": ""
+  }
+}

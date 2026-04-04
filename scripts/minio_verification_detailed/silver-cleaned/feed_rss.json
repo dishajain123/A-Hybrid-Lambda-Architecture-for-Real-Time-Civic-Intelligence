@@ -1,0 +1,13 @@
+{
+  "layer": "silver",
+  "processed_time": "2026-02-02T18:27:54.432507",
+  "endpoint": "feed_rss",
+  "source_timestamp": "2026-02-02T18:22:59.310438",
+  "cleaned_data": {
+    "type": "rss_feed",
+    "source_url": "https://www.thehindu.com",
+    "content_length": 51138,
+    "preview": "<rss version=\"2.0\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:media=\"http://search.yahoo.com/mrss/\" xmlns:atom=\"http://www.w3.org/2005/Atom\"><channel><title><![CDATA[\n\tThe Hindu: Latest News to",
+    "domain": "thehindu.com"
+  }
+}

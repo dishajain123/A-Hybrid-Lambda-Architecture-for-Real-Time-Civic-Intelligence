@@ -1,0 +1,13 @@
+{
+  "layer": "silver",
+  "processed_time": "2026-02-02T18:27:54.458982",
+  "endpoint": "geo_coordinates",
+  "source_timestamp": "2026-02-02T18:23:03.816040",
+  "cleaned_data": {
+    "type": "geolocation",
+    "latitude": 12.9628669,
+    "longitude": 77.57750899999999,
+    "city": "Bengaluru, Karnataka",
+    "coordinates": "12.9628669,77.57750899999999"
+  }
+}

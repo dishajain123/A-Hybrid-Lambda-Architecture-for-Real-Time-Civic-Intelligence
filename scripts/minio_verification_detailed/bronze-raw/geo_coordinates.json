@@ -1,0 +1,17 @@
+{
+  "layer": "bronze",
+  "ingestion_time": "2026-02-02T18:27:54.450434",
+  "endpoint": "geo_coordinates",
+  "source_api": "world_news_api",
+  "raw_message": {
+    "timestamp": "2026-02-02T18:23:03.816040",
+    "endpoint": "geo_coordinates",
+    "source": "world_news_api",
+    "layer": "speed",
+    "data": {
+      "latitude": 12.9628669,
+      "longitude": 77.57750899999999,
+      "city": "Bengaluru, Karnataka"
+    }
+  }
+}

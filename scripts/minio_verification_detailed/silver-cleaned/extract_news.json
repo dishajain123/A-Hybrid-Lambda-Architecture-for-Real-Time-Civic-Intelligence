@@ -1,0 +1,16 @@
+{
+  "layer": "silver",
+  "processed_time": "2026-02-02T18:27:54.708379",
+  "endpoint": "extract_news",
+  "source_timestamp": "2026-02-02T18:26:43.469999",
+  "cleaned_data": {
+    "type": "single_article",
+    "article": null,
+    "total_articles": 0,
+    "extraction_metadata": {
+      "entities_count": 52,
+      "has_video": false,
+      "images_count": 10
+    }
+  }
+}

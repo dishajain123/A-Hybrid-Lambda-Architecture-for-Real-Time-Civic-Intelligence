@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+*.pyo
+*.log
+.git
+.gitignore
+README.md
+tests/
+node_modules/
+dist/
+build/
+.cache/

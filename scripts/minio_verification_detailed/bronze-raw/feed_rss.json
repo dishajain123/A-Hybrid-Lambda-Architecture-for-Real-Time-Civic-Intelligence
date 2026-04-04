@@ -1,0 +1,17 @@
+{
+  "layer": "bronze",
+  "ingestion_time": "2026-02-02T18:27:54.422981",
+  "endpoint": "feed_rss",
+  "source_api": "world_news_api",
+  "raw_message": {
+    "timestamp": "2026-02-02T18:22:59.310438",
+    "endpoint": "feed_rss",
+    "source": "world_news_api",
+    "layer": "speed",
+    "data": {
+      "source_url": "https://www.thehindu.com",
+      "content_length": 51138,
+      "preview": "<rss version=\"2.0\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:media=\"http://search.yahoo.com/mrss/\" xmlns:atom=\"http://www.w3.org/2005/Atom\"><channel><title><![CDATA[\n\tThe Hindu: Latest News today from India and the World, Breaking news, Top Headlines and Trending News Videos. | The Hindu\n]]></title><link>https://www.thehindu.com</link><lastBuildDate>Mon, 02 Feb 2026 18:22:58 +0000</lastBuildDate><pubDate>Mon, 02 Feb 2026 18:22:58 +0000</pubDate><item><title><![CDATA[Is it okay for an Ind"
+    }
+  }
+}

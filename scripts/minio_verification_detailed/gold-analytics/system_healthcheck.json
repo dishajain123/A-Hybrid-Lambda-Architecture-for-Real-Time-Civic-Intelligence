@@ -1,0 +1,35 @@
+{
+  "layer": "gold",
+  "analytics_time": "2026-02-02T18:27:54.369860",
+  "endpoint": "system_healthcheck",
+  "data_type": "healthcheck",
+  "metrics": {
+    "endpoint": "system_healthcheck",
+    "total_articles": 1,
+    "sentiment_distribution": {
+      "positive": 0,
+      "neutral": 1,
+      "negative": 0
+    },
+    "category_breakdown": {
+      "system_health": 1
+    },
+    "top_sources": [
+      {
+        "name": "System Monitor",
+        "count": 1
+      }
+    ]
+  },
+  "health_data": {
+    "status": "initializing",
+    "timestamp": null,
+    "services": {},
+    "message": ""
+  },
+  "data_quality": {
+    "has_status": true,
+    "has_timestamp": false,
+    "services_count": 0
+  }
+}

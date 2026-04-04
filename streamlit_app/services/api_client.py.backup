@@ -1,0 +1,203 @@
+import requests
+from typing import Optional, List, Dict, Any
+from utils.constants import API_BASE_URL
+import streamlit as st
+
+class APIClient:
+    """Handles all API communication with the backend"""
+    
+    def __init__(self, base_url: str = API_BASE_URL):
+        self.base_url = base_url
+        self.timeout = 30
+    
+    def _get(self, endpoint: str, params: Dict[str, Any] = None) -> Optional[Dict]:
+        """Make GET request to API"""
+        try:
+            url = f"{self.base_url}{endpoint}"
+            response = requests.get(url, params=params, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            st.error(f"API Error: {str(e)}")
+            return None
+    
+    def get_latest_news(self, limit: int = 50) -> Optional[Dict]:
+        """Get latest news from live (MongoDB) layer"""
+        return self._get("/api/live/latest", {"limit": limit})
+    
+    def get_by_endpoint(self, endpoint: str, limit: int = 20) -> Optional[Dict]:
+        """Get live news by specific endpoint"""
+        return self._get(f"/api/live/by-endpoint/{endpoint}", {"limit": limit})
+
+    def get_endpoint_articles(self, endpoint: str, limit: int = 50) -> List[Dict]:
+        """Return a flattened list of live articles for a given endpoint."""
+        response = self.get_by_endpoint(endpoint, limit=limit)
+        return self._normalize_endpoint_data(endpoint, response)
+    
+    def get_realtime_stats(self) -> Optional[Dict]:
+        """Get live statistics"""
+        return self._get("/api/live/stats")
+    
+    def get_analytics_summary(self) -> Optional[Dict]:
+        """Get historical analytics summary (gold layer only)"""
+        return self._get("/api/analytics/summary")
+    
+    def search_news(self, query: str, limit: int = 20) -> Optional[Dict]:
+        """Search live news"""
+        return self._get("/api/live/search", {"q": query, "limit": limit})
+
+    # Convenience helpers used by Streamlit pages
+    def get_search_news(self, limit: int = 50) -> Optional[Dict]:
+        """Get latest search_news payloads"""
+        return self.get_by_endpoint("search_news", limit=limit)
+
+    def get_top_news(self, limit: int = 50) -> Optional[Dict]:
+        """Get latest top_news payloads"""
+        return self.get_by_endpoint("top_news", limit=limit)
+
+    def get_extract_news_links(self, limit: int = 20) -> Optional[Dict]:
+        """Get latest extract_news_links payloads"""
+        return self.get_by_endpoint("extract_news_links", limit=limit)
+
+    def get_feed_rss(self, limit: int = 20) -> Optional[Dict]:
+        """Get latest feed_rss payloads"""
+        return self.get_by_endpoint("feed_rss", limit=limit)
+
+    # Analytics accessors (MinIO GOLD)
+    def get_analytics_data(self, endpoint: str) -> Optional[Dict]:
+        """Return aggregated gold analytics payload for an endpoint."""
+        response = self._get(f"/api/analytics/{endpoint}")
+        if not response:
+            return None
+        return response.get("data")
+
+    def _normalize_endpoint_data(self, endpoint: str, response: Optional[Dict]) -> List[Dict]:
+        """
+        Normalize API response into a list of article-like dicts.
+        
+        FIXES:
+        - Properly extracts articles from nested 'data' field
+        - Handles different endpoint structures
+        - Returns fresh data, not old cached data
+        """
+        if not response or 'data' not in response:
+            return []
+
+        documents = response.get('data', [])
+        normalized: List[Dict] = []
+
+        for doc in documents:
+            # Extract the payload from the document
+            payload = doc.get('data', {}) if isinstance(doc, dict) else doc
+            timestamp = doc.get('timestamp') if isinstance(doc, dict) else None
+
+            if endpoint == "search_news":
+                # search_news returns {news: [...articles]}
+                if isinstance(payload, dict):
+                    articles = payload.get('news', [])
+                    if isinstance(articles, list):
+                        for article in articles:
+                            if isinstance(article, dict):
+                                # Add timestamp to article
+                                if timestamp and 'ingestion_time' not in article:
+                                    article['ingestion_time'] = timestamp
+                                normalized.append(article)
+                                
+            elif endpoint == "top_news":
+                # top_news may have different structures
+                if isinstance(payload, dict):
+                    # Check for articles in various possible fields
+                    articles = (payload.get('articles') or 
+                              payload.get('top_news') or 
+                              payload.get('news') or [])
+                    
+                    if isinstance(articles, list):
+                        for article in articles:
+                            if isinstance(article, dict):
+                                if timestamp and 'ingestion_time' not in article:
+                                    article['ingestion_time'] = timestamp
+                                normalized.append(article)
+                    elif isinstance(payload, dict) and payload.get('title'):
+                        # Single article object
+                        if timestamp and 'ingestion_time' not in payload:
+                            payload['ingestion_time'] = timestamp
+                        normalized.append(payload)
+                        
+            elif endpoint == "extract_news":
+                # extract_news returns individual article data
+                if isinstance(payload, dict) and payload:
+                    if timestamp and 'ingestion_time' not in payload:
+                        payload['ingestion_time'] = timestamp
+                    normalized.append(payload)
+                    
+            elif endpoint == "extract_news_links":
+                # extract_news_links returns URL data
+                if isinstance(payload, dict) and payload:
+                    if timestamp and 'ingestion_time' not in payload:
+                        payload['ingestion_time'] = timestamp
+                    normalized.append(payload)
+                    
+            elif endpoint == "feed_rss":
+                # feed_rss returns RSS feed data
+                if isinstance(payload, dict) and payload:
+                    if timestamp and 'ingestion_time' not in payload:
+                        payload['ingestion_time'] = timestamp
+                    normalized.append(payload)
+                    
+            elif endpoint == "geo_coordinates":
+                # geo_coordinates returns location data
+                if isinstance(payload, dict) and payload:
+                    if timestamp and 'ingestion_time' not in payload:
+                        payload['ingestion_time'] = timestamp
+                    normalized.append(payload)
+            else:
+                # Generic handler for unknown endpoints
+                if isinstance(payload, dict) and payload:
+                    if timestamp and 'ingestion_time' not in payload:
+                        payload['ingestion_time'] = timestamp
+                    normalized.append(payload)
+
+        # Sort by timestamp/publish_date to show freshest first
+        normalized.sort(
+            key=lambda x: x.get('ingestion_time') or x.get('publish_date') or '', 
+            reverse=True
+        )
+        
+        return normalized
+    
+    def get_minio_buckets(self) -> Optional[Dict]:
+        """Get MinIO buckets list"""
+        return self._get("/api/batch/buckets")
+    
+    def get_bucket_objects(self, bucket: str, prefix: str = "", limit: int = 20) -> Optional[Dict]:
+        """Get objects in MinIO bucket"""
+        return self._get(f"/api/batch/objects/{bucket}", {
+            "prefix": prefix,
+            "limit": limit
+        })
+    
+    def read_object(self, bucket: str, path: str) -> Optional[Dict]:
+        """Read specific object from MinIO"""
+        return self._get(f"/api/batch/read/{bucket}/{path}")
+    
+    def health_check(self) -> bool:
+        """Check API health"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/",
+                timeout=5
+            )
+            return response.status_code == 200
+        except:
+            return False
+
+
+# Global client instance
+_client = None
+
+def get_client() -> APIClient:
+    """Get or create API client singleton"""
+    global _client
+    if _client is None:
+        _client = APIClient()
+    return _client

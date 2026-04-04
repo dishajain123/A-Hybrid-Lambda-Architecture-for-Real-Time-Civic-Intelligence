@@ -1,0 +1,42 @@
+{
+  "layer": "gold",
+  "analytics_time": "2026-02-02T18:27:54.660486",
+  "endpoint": "extract_news_links",
+  "data_type": "urls",
+  "metrics": {
+    "endpoint": "extract_news_links",
+    "total_articles": 3,
+    "sentiment_distribution": {
+      "positive": 0,
+      "neutral": 3,
+      "negative": 0
+    },
+    "category_breakdown": {
+      "url_extraction": 3
+    },
+    "top_sources": [
+      {
+        "name": "economictimes.indiatimes.com",
+        "count": 1
+      },
+      {
+        "name": "latestly.com",
+        "count": 1
+      }
+    ]
+  },
+  "urls": [
+    "https://economictimes.indiatimes.com/news/new-updates/quote-of-the-day-by-melania-trump-sometimes-in-order-to-succeed-you-must-be-willing-to-take-risks-and-make-tough-decisions-you-need-to-trust-yourself-/articleshow/127865997.cms",
+    "https://economictimes.indiatimes.com/news/new-updates/ssc-mts-admit-card-2026-hall-tickets-direct-link-how-to-download-and-other-faqs/articleshow/127863752.cms",
+    "https://www.latestly.com/agency-news/business-news-top-10-entrepreneurs-in-india-to-watch-in-2026-7298253.html"
+  ],
+  "domains": [
+    "economictimes.indiatimes.com",
+    "latestly.com"
+  ],
+  "data_quality": {
+    "total_urls": 3,
+    "unique_domains": 2,
+    "valid_urls": 3
+  }
+}

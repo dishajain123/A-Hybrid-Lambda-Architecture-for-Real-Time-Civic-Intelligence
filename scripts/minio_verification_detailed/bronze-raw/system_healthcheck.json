@@ -1,0 +1,15 @@
+{
+  "layer": "bronze",
+  "ingestion_time": "2026-02-02T18:27:54.143530",
+  "endpoint": "system_healthcheck",
+  "source_api": "producer_startup",
+  "raw_message": {
+    "timestamp": "2026-02-02T18:22:54.128063",
+    "endpoint": "system_healthcheck",
+    "source": "producer_startup",
+    "layer": "speed",
+    "data": {
+      "status": "initializing"
+    }
+  }
+}

@@ -1,0 +1,149 @@
+[
+  {
+    "timestamp": "2025-09-26T16:13:56.304101",
+    "source_topic": "news-extract-links-data",
+    "endpoint_type": "extract_news_links",
+    "layer": "bronze",
+    "raw_data": {
+      "timestamp": "2025-09-26T16:13:52.499275",
+      "endpoint": "extract_news_links",
+      "source": "world_news_api",
+      "country_focus": "india",
+      "data": {
+        "extracted_urls": [
+          "https://www.latestly.com/agency-news/india-news-supreme-court-allows-manufacturing-of-green-crackers-in-delhi-ncr-no-sales-in-delhi-7130908.html",
+          "https://www.republicworld.com/world-news/maga-supporters-run-racist-operation-clog-the-toilet-campaign-to-block-h-1b-workers-reports-say",
+          "https://www.thehindu.com/news/national/telangana/us-visa-h1b-policy-trump-telangana-jobs-ameerpet-hyderabad-careers/article70095055.ece"
+        ],
+        "source_query": "India news websites",
+        "extraction_count": 3
+      }
+    }
+  },
+  {
+    "timestamp": "2025-09-26T16:13:47.021042",
+    "source_topic": "news-feed-rss-data",
+    "endpoint_type": "feed_rss",
+    "layer": "bronze",
+    "raw_data": {
+      "timestamp": "2025-09-26T16:13:46.936552",
+      "endpoint": "feed_rss",
+      "source": "world_news_api",
+      "country_focus": "india",
+      "data": {
+        "source_url": "https://www.thehindu.com",
+        "url_source": "fallback",
+        "rss_content": "<rss version=\"2.0\" ... truncated for brevity ... </rss>",
+        "content_length": 45486,
+        "content_type": "application/xml",
+        "extract_news_enabled": true,
+        "available_extracted_urls": 0
+      }
+    }
+  },
+  {
+    "timestamp": "2025-09-26T16:13:31.201593",
+    "source_topic": "news-geo-data",
+    "endpoint_type": "geo_coordinates",
+    "layer": "bronze",
+    "raw_data": {
+      "timestamp": "2025-09-26T16:13:31.189645",
+      "endpoint": "geo_coordinates",
+      "source": "world_news_api",
+      "country_focus": "india",
+      "data": {
+        "latitude": 22.5743545,
+        "longitude": 88.3628734,
+        "city": "Kolkata, West Bengal"
+      }
+    }
+  },
+  {
+    "timestamp": "2025-09-26T16:13:28.476305",
+    "source_topic": "news-sources-data",
+    "endpoint_type": "search_news_sources",
+    "layer": "bronze",
+    "raw_data": {
+      "timestamp": "2025-09-26T16:13:28.012698",
+      "endpoint": "search_news_sources",
+      "source": "world_news_api",
+      "country_focus": "india",
+      "data": {
+        "available": 1,
+        "sources": [
+          {
+            "url": "https://timesofindia.indiatimes.com",
+            "name": "Times of India",
+            "language": "en"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "timestamp": "2025-09-26T16:13:54.977388",
+    "source_topic": "news-top-data",
+    "endpoint_type": "top_news",
+    "layer": "bronze",
+    "raw_data": {
+      "timestamp": "2025-09-26T16:13:54.856649",
+      "endpoint": "top_news",
+      "source": "world_news_api",
+      "country_focus": "india",
+      "data": {
+        "top_news": [
+          {
+            "news": [
+              {
+                "id": 363545086,
+                "title": "Horoscope Today: September 26, 2025",
+                "text": "Horoscope details..."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "timestamp": "2025-09-26T16:13:00.777777",
+    "source_topic": "news-search-data",
+    "endpoint_type": "search_news",
+    "layer": "bronze",
+    "raw_data": {
+      "timestamp": "2025-09-26T16:12:59.123456",
+      "endpoint": "search_news",
+      "source": "world_news_api",
+      "country_focus": "india",
+      "data": {
+        "news": [
+          {
+            "title": "India Economy grows 7%",
+            "url": "https://example.com/india-economy",
+            "publish_date": "2025-09-26T15:55:00Z",
+            "author": "Reporter X",
+            "text": "India's economy surprises analysts..."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "timestamp": "2025-09-26T16:14:05.123456",
+    "source_topic": "news-extract-news-data",
+    "endpoint_type": "extract_news",
+    "layer": "bronze",
+    "raw_data": {
+      "timestamp": "2025-09-26T16:14:04.654321",
+      "endpoint": "extract_news",
+      "source": "world_news_api",
+      "country_focus": "india",
+      "data": {
+        "title": "Exclusive: Interview with CEO",
+        "author": "Jane Doe",
+        "content": "Full article content text goes here...",
+        "url": "https://example.com/exclusive-interview"
+      }
+    }
+  }
+]

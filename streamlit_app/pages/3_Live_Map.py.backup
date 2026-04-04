@@ -1,0 +1,162 @@
+import streamlit as st
+import folium
+import streamlit.components.v1 as components
+try:
+    from streamlit_folium import st_folium, folium_static
+except Exception:
+    st_folium = None
+    folium_static = None
+from components.header import render_header, render_divider, render_section_title
+from components.severity_badge import get_severity_color, get_severity_emoji
+from services.api_client import get_client
+from utils.constants import DEFAULT_LATITUDE, DEFAULT_LONGITUDE, DEFAULT_MAP_ZOOM
+
+def render():
+    """Render Live Map page"""
+    
+    render_header("Live Map", "Geographic distribution of civic events", "🗺️")
+    
+    # Get data from API
+    client = get_client()
+    
+    # Auto-refresh for live page only
+    if st.session_state.get("auto_refresh"):
+        interval_s = int(st.session_state.get("refresh_interval", 30))
+        components.html(
+            f"<script>setTimeout(() => window.location.reload(), {interval_s * 1000});</script>",
+            height=0,
+        )
+
+    with st.spinner("Loading map data..."):
+        articles = client.get_endpoint_articles("search_news", limit=200)
+    
+    # === CREATE MAP ===
+    m = folium.Map(
+        location=[DEFAULT_LATITUDE, DEFAULT_LONGITUDE],
+        zoom_start=DEFAULT_MAP_ZOOM,
+        tiles="OpenStreetMap"
+    )
+    
+    # === ADD MARKERS FROM ARTICLES ===
+    if articles:
+        # Group articles by location/source
+        location_counts = {}
+        location_sentiments = {}
+        
+        # Default Indian cities with coordinates
+        cities = {
+            "Mumbai": [19.0760, 72.8777],
+            "Delhi": [28.7041, 77.1025],
+            "Bangalore": [12.9716, 77.5946],
+            "Chennai": [13.0827, 80.2707],
+            "Kolkata": [22.5726, 88.3639],
+            "Hyderabad": [17.3850, 78.4867]
+        }
+        
+        # Count articles by city mentions
+        for article in articles:
+            title_lower = article.get('title', '').lower() + article.get('summary', '').lower()
+            
+            for city, coords in cities.items():
+                if city.lower() in title_lower:
+                    if city not in location_counts:
+                        location_counts[city] = 0
+                        location_sentiments[city] = []
+                    
+                    location_counts[city] += 1
+                    location_sentiments[city].append(article.get('sentiment', 0))
+        
+        # Add markers for cities with articles
+        for city, coords in cities.items():
+            if city in location_counts:
+                count = location_counts[city]
+                avg_sentiment = sum(location_sentiments[city]) / len(location_sentiments[city])
+                
+                # Determine color
+                color = get_severity_color(avg_sentiment)
+                
+                # Create popup
+                popup_html = f"""
+                <div style='font-family: Arial; width: 250px;'>
+                    <h4 style='margin: 0;'>{city}</h4>
+                    <p style='margin: 5px 0;'><strong>{count}</strong> articles tracked</p>
+                    <p style='margin: 5px 0;'><strong>Sentiment:</strong> {avg_sentiment:+.2f}</p>
+                    <p style='margin: 5px 0; font-size: 0.9em;'>
+                        {get_severity_emoji(avg_sentiment)} Top category: {articles[0].get('category', 'general')}
+                    </p>
+                </div>
+                """
+                
+                folium.CircleMarker(
+                    location=coords,
+                    radius=10 + (count * 2),
+                    popup=folium.Popup(popup_html, max_width=300),
+                    color=color,
+                    fill=True,
+                    fillColor=color,
+                    fillOpacity=0.7,
+                    weight=2,
+                    tooltip=f"{city}: {count} events"
+                ).add_to(m)
+    
+    # === DISPLAY MAP ===
+    st.markdown("### Geographic Distribution")
+    if folium_static is not None:
+        folium_static(m, width=1400, height=600)
+    else:
+        st_folium(m, width=1400, height=600)
+    
+    render_divider()
+    
+    # === LEGEND ===
+    st.markdown("### Map Legend")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        🟢 **Low Severity**  
+        Positive sentiment  
+        Community good news
+        """)
+    
+    with col2:
+        st.markdown("""
+        🟡 **Medium Severity**  
+        Neutral sentiment  
+        Balanced reporting
+        """)
+    
+    with col3:
+        st.markdown("""
+        🔴 **High Severity**  
+        Negative sentiment  
+        Crisis/alert events
+        """)
+    
+    render_divider()
+    
+    # === CITY STATISTICS ===
+    st.markdown("### Event Distribution by City")
+    
+    if articles:
+        # Recreate city counts for display
+        cities = {
+            "Mumbai": [19.0760, 72.8777],
+            "Delhi": [28.7041, 77.1025],
+            "Bangalore": [12.9716, 77.5946],
+            "Chennai": [13.0827, 80.2707],
+            "Kolkata": [22.5726, 88.3639],
+            "Hyderabad": [17.3850, 78.4867]
+        }
+        
+        location_counts = {}
+        for article in articles:
+            title_lower = article.get('title', '').lower() + article.get('summary', '').lower()
+            for city in cities:
+                if city.lower() in title_lower:
+                    location_counts[city] = location_counts.get(city, 0) + 1
+        
+        cols = st.columns(3)
+        for idx, (city, count) in enumerate(sorted(location_counts.items(), key=lambda x: x[1], reverse=True)):
+            with cols[idx % 3]:
+                st.metric(city, count, help=f"Articles mentioning {city}")
