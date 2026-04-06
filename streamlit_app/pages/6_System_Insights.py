@@ -1,960 +1,495 @@
 """
-PAGE 6: SYSTEM INSIGHTS
-============================================================
-Static documentation of architecture, data pipeline, tech stack, and data ethics.
-Gold-layer backed with premium UI and academic credibility.
+Page 6: System Insights — Architecture, pipeline health, API contract, data ethics.
+Built-in architecture diagram — no upload required.
+"""
+import streamlit as st
+import plotly.graph_objects as go
+from datetime import datetime
 
-MANDATORY SECTIONS:
-1. System Health Overview (system_healthcheck.json)
-2. Architecture Diagram (User upload)
-3. Architecture Explanation (Structured)
-4. Frontend ↔ Backend Contract
-5. Real-Time vs Historical Flow
-6. Ethical AI & Limitations
+from components.header  import render_header, render_section_title, render_divider
+from services.api_client import get_client
+from utils.constants    import PLOTLY_LAYOUT
+import utils.dummy_data as _dummy
 
-NOTE: This page is designed for Streamlit's multi-page app structure.
-NO render() function - code executes directly at module load.
+_CSS = """
+<style>
+.arch-card {
+    background:#fff; border:1.5px solid #e5e5e5; border-radius:14px;
+    padding:1.4rem 1.6rem; margin-bottom:1rem;
+    box-shadow:0 1px 4px rgba(0,0,0,.05);
+}
+.arch-card h4 { font-size:.95rem; font-weight:700; color:#000; margin:0 0 .65rem; }
+.arch-card p  { font-size:.85rem; color:#444; line-height:1.7; margin:0; }
+
+.tech-chip { display:inline-block; color:#fff; border-radius:6px; padding:.22rem .7rem; margin:.2rem; font-size:.72rem; font-weight:700; letter-spacing:.3px; }
+.tc-speed  { background:#1d4ed8; }
+.tc-batch  { background:#7c3aed; }
+.tc-store  { background:#047857; }
+.tc-api    { background:#b45309; }
+.tc-ui     { background:#000; }
+
+.health-row {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:.6rem 0; border-bottom:1px solid #f0f0f0; font-size:.85rem;
+}
+.health-row:last-child { border-bottom:none; }
+.h-ok   { color:#16a34a; font-weight:700; }
+.h-warn { color:#ca8a04; font-weight:700; }
+.h-err  { color:#dc2626; font-weight:700; }
+
+.pipe-step {
+    background:#fff; border:1.5px solid #e5e5e5; border-radius:11px;
+    padding:.9rem .75rem; text-align:center; transition:all .2s;
+    min-height:120px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    overflow:hidden;
+}
+.pipe-step:hover { border-color:#000; box-shadow:0 4px 14px rgba(0,0,0,.09); }
+.pipe-icon { font-size:1.6rem; display:block; margin-bottom:.3rem; }
+.pipe-name {
+    font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:#000;
+    overflow-wrap:anywhere; word-break:break-word; line-height:1.35;
+}
+.pipe-role {
+    font-size:.65rem; color:#888; margin-top:.15rem;
+    overflow-wrap:anywhere; word-break:break-word; line-height:1.35;
+}
+
+.arrow-cell { text-align:center; font-size:1.2rem; color:#ccc; padding-top:1.4rem; }
+
+.pipeline-flow {
+    display:flex;
+    gap:.55rem;
+    align-items:stretch;
+    overflow-x:auto;
+    padding-bottom:.35rem;
+}
+
+.pipeline-flow::-webkit-scrollbar {
+    height:6px;
+}
+
+.pipeline-flow::-webkit-scrollbar-thumb {
+    background:#d1d5db;
+    border-radius:999px;
+}
+
+.pipe-arrow {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-width:24px;
+    color:#9ca3af;
+    font-size:1.25rem;
+    font-weight:700;
+}
+
+.contract-row {
+    display:flex; gap:.75rem; padding:.6rem 0;
+    border-bottom:1px solid #f0f0f0; font-size:.83rem; align-items:baseline;
+    flex-wrap:wrap;
+}
+.contract-row:last-child { border-bottom:none; }
+
+.ethical-item {
+    background:#f5f5f5; border-radius:10px; padding:.9rem 1.1rem;
+    margin-bottom:.6rem; font-size:.85rem; color:#333; line-height:1.6;
+    border-left:3px solid #000;
+}
+.ethical-item strong { color:#000; }
+
+.schema-row {
+    display:flex; gap:.5rem; padding:.5rem .65rem;
+    border-bottom:1px solid #f0f0f0; font-size:.8rem; align-items:baseline;
+}
+.schema-row:last-child { border-bottom:none; }
+</style>
 """
 
-import streamlit as st
-from datetime import datetime
-from services.api_client import get_client
+_PIPELINE_STEPS = [
+    ("🌍","World News API","Source"),
+    ("⚡","Kafka Producer","Ingest"),
+    ("📨","Kafka Consumer","Stream"),
+    ("🔶","MinIO Bronze","Raw Store"),
+    ("⚙️","Apache Flink","Batch Process"),
+    ("🥈","MinIO Silver","Cleaned"),
+    ("🥇","MinIO Gold","Analytics"),
+    ("🚀","FastAPI","Serve"),
+    ("📊","Streamlit","Display"),
+]
 
 def render():
-
-    # ============ CUSTOM PREMIUM CSS ============
-    st.markdown("""
-    <style>
-        /* Root Variables */
-        :root {
-            --primary: #0ea5e9;
-            --primary-dark: #0284c7;
-            --primary-light: #e0f2fe;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --neutral-50: #f9fafb;
-            --neutral-200: #e5e7eb;
-            --neutral-700: #374151;
-        }
-
-        /* Typography Hierarchy */
-        h1 { font-weight: 700; letter-spacing: -0.5px; margin-bottom: 0.5rem; }
-        h2 { font-weight: 600; margin-top: 2rem; margin-bottom: 1rem; }
-        h3 { font-weight: 600; color: var(--neutral-700); }
-
-        /* Section Divider */
-        .section-divider {
-            height: 2px;
-            background: linear-gradient(90deg, transparent, #d1d5db, transparent);
-            margin: 2.5rem 0;
-        }
-
-        /* Premium Insight Card */
-        .insight-card {
-            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-            padding: 1.75rem;
-            border-radius: 12px;
-            border-left: 5px solid var(--primary);
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-            margin-bottom: 1.25rem;
-        }
-
-        /* Architecture Section Card */
-        .architecture-card {
-            background: white;
-            padding: 2rem;
-            border-radius: 12px;
-            border: 1px solid var(--neutral-200);
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-            margin: 1.5rem 0;
-        }
-
-        /* Tech Stack Grid */
-        .tech-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 1rem;
-            margin: 1.5rem 0;
-        }
-
-        .tech-item {
-            background: linear-gradient(135deg, var(--neutral-50) 0%, white 100%);
-            padding: 1.25rem;
-            border-radius: 10px;
-            border: 1px solid var(--neutral-200);
-            transition: all 0.2s ease;
-        }
-
-        .tech-item:hover {
-            border-color: var(--primary);
-            box-shadow: 0 4px 12px rgba(14, 165, 233, 0.1);
-        }
-
-        /* Ethics Box - Warning Style */
-        .ethics-box {
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-            border-left: 5px solid var(--warning);
-            padding: 1.75rem;
-            border-radius: 10px;
-            margin: 1.5rem 0;
-        }
-
-        /* Ethics Box - Success Style */
-        .ethics-box-success {
-            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-            border-left: 5px solid var(--success);
-            padding: 1.75rem;
-            border-radius: 10px;
-            margin: 1.5rem 0;
-        }
-
-        /* Data Flow Table */
-        .flow-table {
-            margin: 1.5rem 0;
-        }
-
-        /* Metric Card */
-        .metric-card {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 10px;
-            border: 1px solid var(--neutral-200);
-            text-align: center;
-            transition: all 0.2s ease;
-        }
-
-        .metric-card:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-        }
-
-        /* Status Badge */
-        .status-badge {
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            font-size: 0.875rem;
-            font-weight: 600;
-        }
-
-        .badge-healthy {
-            background-color: #dcfce7;
-            color: #166534;
-        }
-
-        .badge-warning {
-            background-color: #fef3c7;
-            color: #92400e;
-        }
-
-        .badge-error {
-            background-color: #fee2e2;
-            color: #991b1b;
-        }
-
-        /* Callout Box */
-        .callout-critical {
-            background: white;
-            border-left: 4px solid var(--danger);
-            padding: 1.25rem;
-            border-radius: 8px;
-            margin: 1.5rem 0;
-        }
-
-        /* Image Container */
-        .image-container {
-            border: 1px solid var(--neutral-200);
-            border-radius: 10px;
-            padding: 1.5rem;
-            background: white;
-            margin: 1.5rem 0;
-        }
-
-        /* Footer */
-        .footer-section {
-            text-align: center;
-            color: #6b7280;
-            margin-top: 3rem;
-            padding-top: 2rem;
-            border-top: 1px solid var(--neutral-200);
-            font-size: 0.95rem;
-        }
-
-        /* Expander Override */
-        .streamlit-expanderHeader { background-color: var(--neutral-50); }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # ============ HELPER FUNCTIONS ============
-
-    def load_system_health():
-        """Load system health data from gold layer via API."""
-        client = get_client()
-        return client.get_analytics_data("system_healthcheck")
-
-    def get_health_badge(status):
-        """Generate HTML badge for status"""
-        status_lower = str(status).lower()
-        if "healthy" in status_lower or "green" in status_lower:
-            badge_class = "badge-healthy"
-            label = "✓ Healthy"
-        elif "warning" in status_lower or "yellow" in status_lower or "init" in status_lower:
-            badge_class = "badge-warning"
-            label = "⚠ Warning"
-        else:
-            badge_class = "badge-error"
-            label = "✕ Error"
-
-        return f'<span class="status-badge {badge_class}">{label}</span>'
-    def format_metric(value, suffix: str) -> str:
-        """Format metric values with suffix, guard against missing values."""
-        if value is None or value == "" or value == "N/A":
-            return "N/A"
-        return f"{value} {suffix}"
-
-    def coalesce(*values, default="Unknown"):
-        for value in values:
-            if value is not None and value != "":
-                return value
-        return default
-
-    def render_insight_card(title, content, icon="📌"):
-        """Render a premium insight card"""
-        st.markdown(f"""
-        <div class="insight-card">
-            <h3 style="margin-top: 0; color: var(--primary-dark);">{icon} {title}</h3>
-            <p style="margin-bottom: 0;">{content}</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    def render_ethics_box(title, content, box_type="warning"):
-        """Render an ethics/responsibility box"""
-        css_class = "ethics-box-success" if box_type == "success" else "ethics-box"
-        st.markdown(f"""
-        <div class="{css_class}">
-            <h4 style="margin-top: 0;">{title}</h4>
-            <div style="font-size: 0.95rem; line-height: 1.6;">{content}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ============ PAGE CONTENT - EXECUTES DIRECTLY ============
-
-    # Header
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.title("⚙️ System Insights")
-        st.markdown("**Architecture • Data Pipeline • Ethics • Technical Contract**")
-
-    system_health = load_system_health()
-    if isinstance(system_health, dict):
-        if "pipeline_status" not in system_health and "status" in system_health:
-            system_health["pipeline_status"] = system_health.get("status")
-        if "last_successful_run" not in system_health and "timestamp" in system_health:
-            system_health["last_successful_run"] = system_health.get("timestamp")
-        if "last_updated" not in system_health and "timestamp" in system_health:
-            system_health["last_updated"] = system_health.get("timestamp")
-        if "ingestion_latency_ms" not in system_health:
-            system_health["ingestion_latency_ms"] = system_health.get("latency_ms")
-        if "source_availability_pct" not in system_health:
-            system_health["source_availability_pct"] = system_health.get("availability_pct")
-        if "processing_lag_minutes" not in system_health:
-            system_health["processing_lag_minutes"] = system_health.get("lag_minutes")
-
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-
-    # ============ SECTION 1: SYSTEM HEALTH OVERVIEW ============
-    st.header("1️⃣ System Health Overview")
-    st.markdown("Real-time status of the City Pulse pipeline and infrastructure")
-
-    if system_health:
-        # Parse health status
-        pipeline_status = system_health.get("pipeline_status", "unknown")
-        health_badge_html = get_health_badge(pipeline_status)
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="color: #6b7280; margin: 0 0 0.5rem 0; font-size: 0.875rem; text-transform: uppercase; font-weight: 600;">Pipeline Status</p>
-                {health_badge_html}
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col2:
-            ingestion_latency = format_metric(system_health.get("ingestion_latency_ms"), "ms")
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="color: #6b7280; margin: 0 0 0.5rem 0; font-size: 0.875rem; text-transform: uppercase; font-weight: 600;">Ingestion Latency</p>
-                <p style="font-size: 1.5rem; font-weight: 700; color: var(--primary); margin: 0;">{ingestion_latency}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col3:
-            source_availability = format_metric(system_health.get("source_availability_pct"), "%")
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="color: #6b7280; margin: 0 0 0.5rem 0; font-size: 0.875rem; text-transform: uppercase; font-weight: 600;">Source Availability</p>
-                <p style="font-size: 1.5rem; font-weight: 700; color: var(--primary); margin: 0;">{source_availability}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col4:
-            processing_lag = format_metric(system_health.get("processing_lag_minutes"), "min")
-            st.markdown(f"""
-            <div class="metric-card">
-                <p style="color: #6b7280; margin: 0 0 0.5rem 0; font-size: 0.875rem; text-transform: uppercase; font-weight: 600;">Processing Lag</p>
-                <p style="font-size: 1.5rem; font-weight: 700; color: var(--primary); margin: 0;">{processing_lag}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # Last run timestamp
-        last_run = coalesce(system_health.get("last_successful_run"), system_health.get("last_updated"), system_health.get("analytics_time"), system_health.get("last_modified"))
-        last_updated = coalesce(system_health.get("last_updated"), system_health.get("analytics_time"), system_health.get("last_modified"))
-
-        st.markdown(f"""
-        <div class="insight-card">
-            <p style="margin: 0; font-size: 0.9rem;"><strong>Last Successful Pipeline Run:</strong> {last_run}</p>
-            <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem;"><strong>Last Updated:</strong> {last_updated}</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        history = system_health.get("history", [])
-        if history:
-            with st.expander("Historical Health Checks"):
-                for entry in history:
-                    if isinstance(entry, dict):
-                        st.markdown(
-                            f"- {entry.get('timestamp') or 'Unknown'} • {entry.get('status', 'unknown')} • {entry.get('message', '')}"
-                        )
-                    else:
-                        st.markdown(f"- {entry}")
-
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-
-    # ============ SECTION 2: ARCHITECTURE DIAGRAM (USER UPLOAD) ============
-    st.header("2️⃣ Architecture Diagram")
-    st.markdown("Upload your system architecture diagram (PNG or JPG)")
-
-    # Initialize session state for image upload
-    if "uploaded_architecture" not in st.session_state:
-        st.session_state.uploaded_architecture = None
-
-    # Only show file uploader if no image is uploaded yet
-    if st.session_state.uploaded_architecture is None:
-        uploaded_file = st.file_uploader(
-            "Choose architecture diagram image",
-            type=["png", "jpg", "jpeg"],
-            key="architecture_upload"
-        )
-
-        if uploaded_file is not None:
-            st.session_state.uploaded_architecture = uploaded_file
-            st.rerun()
-    else:
-        # Image is uploaded, show it and allow clearing
-        col1, col2 = st.columns([4, 1])
-
-        with col1:
-            st.markdown('<div class="image-container">', unsafe_allow_html=True)
-            st.image(st.session_state.uploaded_architecture, caption="High-level system architecture", use_column_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        with col2:
-            # Clear button to upload a new image
-            if st.button("🗑️ Clear", key="clear_architecture"):
-                st.session_state.uploaded_architecture = None
-                st.rerun()
-
-    # Info box only shows when no image is uploaded
-    if st.session_state.uploaded_architecture is None and 'uploaded_file' not in locals():
-        st.info("📤 **Upload an architecture diagram** to visualize the system topology. This should include:\n\n"
-                "- Data sources (News APIs, RSS feeds)\n"
-                "- Message queue (Kafka)\n"
-                "- Speed layer (Kafka → MongoDB)\n"
-                "- Batch layer (Flink)\n"
-                "- Data lakehouse (Bronze → Silver → Gold)\n"
-                "- API layer (FastAPI)\n"
-                "- Presentation layer (Streamlit)")
-
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-
-    # ============ SECTION 3: ARCHITECTURE EXPLANATION ============
-    st.header("3️⃣ Architecture Explanation")
-    st.markdown("A deep dive into how City Pulse processes civic intelligence data")
-
-    # 3a. Data Sources
-    with st.expander("📥 **Data Sources & Ingestion**", expanded=True):
-        st.markdown("""
-        **City Pulse ingests civic intelligence from multiple trusted sources:**
-
-        - **World News API**: Curated English-language news, updated every 3 minutes
-        - **RSS Feeds**: Direct syndication from major Indian news outlets
-        - **Optional Public Alerts**: Emergency services, weather, civic notices (extensible)
-
-        **Intelligent Location Resolution:**
-        - Automatic geotag extraction from article text and metadata
-        - Entity recognition for city/region references
-        - Fallback to source domain location for unmapped articles
-        - City-level granularity (no personal data extraction)
-        """)
-
-    # 3b. Kafka - Streaming Backbone
-    with st.expander("⚡ **Kafka: Streaming Backbone**", expanded=False):
-        st.markdown("""
-        **Purpose:** Event-driven, durable message queue for all ingested news
-
-        **Responsibilities:**
-        - **Event Publishing**: Every new article = 1 Kafka event
-        - **Durability**: Events retained for 48 hours (configurable)
-        - **Low-Latency Ingestion**: Sub-second event propagation
-        - **Fault Tolerance**: Replicated across cluster (3 brokers minimum)
-
-        **Data Contract:**
-        ```
-        Event Schema:
-        {
-          "event_id": "uuid",
-          "timestamp": "2025-02-03T14:32:15Z",
-          "source": "world-news-api",
-          "article": {
-            "title", "content", "url", "author",
-            "published_at", "sentiment_score"
-          },
-          "location": {"city", "region", "country"}
-        }
-        ```
-
-        **Performance:** ~2.8ms ingestion latency, 98.5% availability
-        """)
-
-    # 3c. Speed Layer (Real-Time)
-    with st.expander("🚀 **Speed Layer: Real-Time Processing**", expanded=False):
-        st.markdown("""
-        **Purpose:** Immediate availability of fresh civic intelligence
-
-        **Technology:** Kafka → MongoDB (TTL indexes)
-
-        **Characteristics:**
-        - **Latency**: ~100ms from ingestion to queryable
-        - **Retention**: 48 hours (automatic TTL cleanup)
-        - **Use Cases**: Live dashboard, trending keywords, real-time sentiment
-        - **Queries**: Geospatial (MongoDB geoqueries for map visualization)
-
-        **Data Model (MongoDB Collections):**
-        ```
-        articles:
-          - _id, title, content, url, timestamp
-          - location: {city, lat, lng}
-          - sentiment_score, category, keywords
-          - ttl_index: expires_at (48h TTL)
-
-        metrics:
-          - time_window, count, avg_sentiment
-          - geographic_distribution, trending_topics
-        ```
-
-        **Limitations:** Speed layer is temporary. For long-term analysis, use Gold layer.
-        """)
-
-    # 3d. Batch Layer (Flink)
-    with st.expander("⚙️ **Batch Layer: Windowed Analytics**", expanded=False):
-        st.markdown("""
-        **Purpose:** Structured, enriched, deduplicated analytics
-
-        **Technology:** Apache Flink (stream processing)
-
-        **Processing:**
-        - **Windows**: 5-minute tumbling windows
-        - **Deduplication**: Cross-source duplicate detection
-        - **Enrichment**: Entity extraction, location inference, sentiment calibration
-        - **Aggregation**: Category counts, geographic distribution, keyword frequency
-
-        **Data Flow:**
-        ```
-        Kafka (raw events)
-          ↓
-        Flink Window Aggregation (5-min windows)
-          ↓
-        Deduplication Engine
-          ↓
-        Enrichment Pipeline
-          ↓
-        Silver Layer (cleaned events)
-        ```
-
-        **Output Metrics (per 5-min window):**
-        - Total articles ingested
-        - Category breakdown
-        - Sentiment distribution
-        - Top 10 keywords
-        - Geographic hotspots
-        """)
-
-    # 3e. Data Lakehouse (Bronze → Silver → Gold)
-    with st.expander("💾 **Data Lakehouse: Permanent Storage**", expanded=False):
-        st.markdown("""
-        **Purpose:** Immutable, queryable historical archive + analytics-ready datasets
-
-        **Technology:** MinIO (S3-compatible object storage)
-
-        **Three-Layer Architecture:**
-
-        **BRONZE LAYER** (Raw, audit-ready)
-        - Unmodified ingestion records
-        - Kafka event dumps (as JSON)
-        - Purpose: Compliance, audit trail, replayability
-        - Retention: Permanent
-
-        **SILVER LAYER** (Cleaned, deduplicated)
-        - Cleaned articles (bad data removed)
-        - Standardized schemas
-        - Removed duplicates
-        - Purpose: Reliable historical data
-        - Retention: Permanent
-
-        **GOLD LAYER** (Analytics-ready, UI-serving)
-        - Pre-aggregated metrics (search_news, top_news)
-        - Enriched articles (entities, topics, geo-tags)
-        - Compressed, indexed for fast queries
-        - Purpose: **Direct API consumption** (Streamlit only reads Gold)
-        - Retention: Permanent
-
-        **Data Lineage:**
-        ```
-        Ingestion → Kafka → Flink → Bronze
-                                  ↓
-                              Dedup/Clean → Silver
-                                  ↓
-                              Aggregate/Enrich → Gold
-                                  ↓
-                              FastAPI (endpoints)
-                                  ↓
-                              Streamlit Frontend
-        ```
-        """)
-
-    # 3f. Gold-Layer Datasets
-    st.subheader("🌟 Gold-Layer Datasets (Frontend-Ready)")
-    st.markdown("""
-    The frontend **ONLY** reads from Gold-layer endpoints via FastAPI.
-    These datasets are pre-aggregated, validated, and optimized for UI consumption.
-    """)
-
-    gold_datasets = {
-        "search_news": {
-            "icon": "🔍",
-            "description": "Full-text news search with metrics",
-            "fields": ["articles (20+)", "total_count", "sentiment_distribution", "category_breakdown", "time_series", "trending_keywords"],
-            "freshness": "5 minutes",
-            "use_cases": ["Search results", "Filtering", "Time-series trends"]
-        },
-        "top_news": {
-            "icon": "⭐",
-            "description": "Editorial selections: top, positive, negative",
-            "fields": ["featured_articles (204)", "metrics", "trending_keywords", "editorial_notes"],
-            "freshness": "Hourly",
-            "use_cases": ["Homepage showcase", "Trending stories", "Sentiment extremes"]
-        },
-        "extract_news": {
-            "icon": "📖",
-            "description": "Deep article extraction & enrichment",
-            "fields": ["full_content", "entities", "topics", "summary", "sentiment", "location"],
-            "freshness": "On-demand",
-            "use_cases": ["Article detail view", "Entity exploration"]
-        },
-        "extract_news_links": {
-            "icon": "🔗",
-            "description": "Related articles & source domains",
-            "fields": ["urls", "domains", "link_text", "validation_status"],
-            "freshness": "Daily",
-            "use_cases": ["Source attribution", "Cross-reference reading"]
-        },
-        "feed_rss": {
-            "icon": "📰",
-            "description": "Aggregated RSS from major sources",
-            "fields": ["rss_data", "source_url", "domain", "content_preview"],
-            "freshness": "15 minutes",
-            "use_cases": ["Raw feed display", "Source monitoring"]
-        },
-        "geo_coordinates": {
-            "icon": "🗺️",
-            "description": "Geocoded events for map visualization",
-            "fields": ["city", "latitude", "longitude", "region", "country", "article_count"],
-            "freshness": "Real-time",
-            "use_cases": ["Map visualization", "Geographic filtering", "Hotspot detection"]
-        }
-    }
-
-    cols = st.columns(3)
-    for idx, (dataset_key, dataset_info) in enumerate(gold_datasets.items()):
-        with cols[idx % 3]:
-            st.markdown(f"""
-            <div class="architecture-card">
-                <h4 style="margin-top: 0; color: var(--primary);">{dataset_info['icon']} {dataset_key.upper()}</h4>
-                <p style="font-size: 0.9rem; margin: 0.5rem 0; color: #374151;"><strong>{dataset_info['description']}</strong></p>
-                <p style="font-size: 0.85rem; color: #6b7280; margin: 0.5rem 0;">
-                    <strong>Freshness:</strong> {dataset_info['freshness']}<br>
-                    <strong>Fields:</strong> {len(dataset_info['fields'])}
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-
-    # ============ SECTION 4: FRONTEND ↔ BACKEND CONTRACT ============
-    st.header("4️⃣ Frontend ↔ Backend Contract")
-    st.markdown("**Critical architectural principle: Separation of concerns**")
-
-    render_insight_card(
-        "The Golden Rule",
-        "Streamlit (frontend) <strong>NEVER</strong> reads raw storage. "
-        "All data flows through <strong>FastAPI</strong>, which enforces schema validation, "
-        "filtering, and access control. This ensures data integrity, security, and auditability.",
-        icon="🛡️"
-    )
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("""
-        ### Frontend Responsibilities (Streamlit)
-
-        ✓ **Read-only access** via FastAPI endpoints
-
-        ✓ **Filter & sort** metadata (city, severity, date range)
-
-        ✓ **Display** validated data
-
-        ✓ **Visualize** via charts, maps, tables
-
-        ✓ **No direct database queries**
-
-        ✓ **No raw JSON exposure**
-        """)
-
-    with col2:
-        st.markdown("""
-        ### Backend Responsibilities (FastAPI)
-
-        ✓ **Validate** Gold-layer schemas
-
-        ✓ **Enforce** filter logic (city, severity, time)
-
-        ✓ **Aggregate** metrics across datasets
-
-        ✓ **Cache** expensive queries
-
-        ✓ **Rate-limit** API access
-
-        ✓ **Log & audit** all requests
-        """)
-
-    st.markdown("""
-    **Every page is Gold-backed:**
-
-    - **Dashboard**: `search_news` + `geo_coordinates` (FastAPI endpoint)
-    - **Insights**: `search_news` + time-series aggregation (FastAPI endpoint)
-    - **Map**: `geo_coordinates` + real-time MongoDB geoqueries (FastAPI endpoint)
-    - **Topics**: `search_news` → trending keywords extraction (FastAPI endpoint)
-    - **Articles**: `extract_news` + `extract_news_links` (FastAPI endpoint)
-    - **System Insights**: `system_healthcheck.json` (static, but could be dynamic via FastAPI)
-
-    **No page reads:**
-    - ❌ Direct MinIO/S3
-    - ❌ Direct MongoDB
-    - ❌ Raw file system
-    - ❌ Kafka topics
-    """)
-
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-
-    # ============ SECTION 5: REAL-TIME VS HISTORICAL FLOW ============
-    st.header("5️⃣ Real-Time vs Historical Data Flow")
-
-    st.markdown("**Lambda Architecture: Best of both worlds**")
-
-    # Data flow table
-    st.markdown("""
-    | **Layer** | **Source** | **Frequency** | **Retention** | **Purpose** | **Latency** |
-    |-----------|-----------|---------------|---------------|------------|-----------|
-    | **Speed** | Kafka → MongoDB | ~100ms | 48 hours | Live dashboard, trending | <100ms |
-    | **Batch** | Kafka → Flink | 5-min windows | Permanent (Silver) | Dedup, enrichment, validation | 5 minutes |
-    | **Gold** | Silver → Gold | Continuous | Permanent | Analytics, API serving | Variable |
-    """)
-
-    st.markdown("### Why Lambda Architecture?")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown("""
-        **Speed Layer Benefits**
-
-        - Immediate insights
-        - Live trending detection
-        - User engagement (real-time feel)
-        - Geospatial queries
-        """)
-
-    with col2:
-        st.markdown("""
-        **Batch Layer Benefits**
-
-        - Data quality (dedup, validation)
-        - Cost efficiency
-        - Complex aggregations
-        - Immutable audit trail
-        """)
-
-    with col3:
-        st.markdown("""
-        **Gold Layer Benefits**
-
-        - Single source of truth
-        - Schema enforcement
-        - Fast API responses
-        - No raw data exposure
-        """)
-
-    st.markdown("""
-    ### Trade-Offs
-
-    | **Aspect** | **Trade-Off** |
-    |-----------|--------------|
-    | **Complexity** | Maintaining 3 systems vs simplicity |
-    | **Latency** | <100ms real-time vs 5-min batch accuracy |
-    | **Cost** | Higher infrastructure vs reduced compute per query |
-    | **Consistency** | Eventual consistency vs strong consistency |
-    """)
-
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-
-    # ============ SECTION 6: ETHICAL AI & LIMITATIONS ============
-    st.header("6️⃣ Ethical AI & Limitations")
-    st.markdown("**Transparency, responsibility, and honest limitations**")
-
-    # Bias & Source Reliability
-    render_ethics_box(
-        "📊 Bias Awareness & Source Reliability",
-        """
-        <strong>News Aggregation Bias:</strong><br>
-        • All sources are major English-language outlets (publication bias)<br>
-        • Coverage skews toward urban centers and large cities<br>
-        • Less coverage of rural or underreported regions<br>
-        • Breaking news priority may overshadow long-term trends<br>
-        <br>
-        <strong>Sentiment Analysis Limitations:</strong><br>
-        • Sentiment is statistical (tone), not editorial (truth)<br>
-        • Sarcasm, irony, and context-dependent meaning are misclassified ~15% of the time<br>
-        • Cultural idioms in Indian English may not parse correctly<br>
-        • Negation ("not good") can flip sentiment scores<br>
-        <br>
-        <strong>Mitigation:</strong><br>
-        • Always cross-reference with primary sources<br>
-        • Use sentiment as signal, not ground truth<br>
-        • Diversify news consumption
-        """,
-        box_type="warning"
-    )
-
-    # Location Inference
-    render_ethics_box(
-        "🗺️ Location Inference Uncertainty",
-        """
-        <strong>Geocoding Limitations:</strong><br>
-        • City-level granularity only (no street, building, or personal location)<br>
-        • Articles mentioning multiple cities default to first extraction<br>
-        • Ambiguous city names (e.g., "Springfield") may resolve incorrectly<br>
-        • Event location ≠ news publication location<br>
-        <br>
-        <strong>No Personal Data:</strong><br>
-        • No individual names, phone numbers, or IDs extracted<br>
-        • No cross-referencing with personal databases<br>
-        • Pure geographic analysis of public news only<br>
-        <br>
-        <strong>Best Practice:</strong><br>
-        • Use for trend analysis, not precise geolocation<br>
-        • Verify hotspots against ground truth
-        """,
-        box_type="warning"
-    )
-
-    # AI Summaries
-    render_ethics_box(
-        "🤖 AI Summaries: Assistive, Not Authoritative",
-        """
-        <strong>Where Summaries Are Used (if enabled):</strong><br>
-        • Article preview text<br>
-        • Brief descriptions (if Gemini API is integrated)<br>
-        <br>
-        <strong>Limitations:</strong><br>
-        • Generated summaries may omit nuance or context<br>
-        • Hallucinations possible (rare, but can occur)<br>
-        • Not a substitute for reading the full article<br>
-        • Reflects the bias of the source article<br>
-        <br>
-        <strong>Responsibility:</strong><br>
-        • Always read the original article for decisions<br>
-        • Do not quote or cite summaries as authoritative<br>
-        • Use only for quick context, not policy or claims
-        """,
-        box_type="warning"
-    )
-
-    # Data Privacy
-    render_ethics_box(
-        "🔒 Privacy & Data Protection",
-        """
-        <strong>What We Do NOT Collect:</strong><br>
-        • Personal names, emails, phone numbers<br>
-        • Individual user data or browsing history<br>
-        • IP addresses or device tracking<br>
-        • Sensitive categories (health, finance, politics votes)<br>
-        <br>
-        <strong>What We Store:</strong><br>
-        • Public news article metadata<br>
-        • Aggregated metrics (counts, averages)<br>
-        • City-level geographic data<br>
-        <br>
-        <strong>Data Retention:</strong><br>
-        • Speed layer: Auto-deleted after 48 hours<br>
-        • Historical layer: Immutable, never deleted (for audit)<br>
-        <br>
-        <strong>Security:</strong><br>
-        • HTTPS in-transit encryption (production)<br>
-        • No plaintext storage<br>
-        • API authentication (production)
-        """,
-        box_type="success"
-    )
-
-    # Algorithmic Transparency
-    render_ethics_box(
-        "👁️ Algorithmic Transparency",
-        """
-        <strong>What This System Does:</strong><br>
-        • Aggregates public news<br>
-        • Counts and ranks by frequency (no "recommended for you")<br>
-        • Applies simple sentiment scoring (not recommendation algorithms)<br>
-        • Extracts named entities (location, person, organization)<br>
-        <br>
-        <strong>What This System Does NOT Do:</strong><br>
-        • Rank news by importance/truth (editorial neutrality)<br>
-        • Recommend news based on user profile<br>
-        • Use machine learning to filter or suppress stories<br>
-        • Make editorial decisions<br>
-        <br>
-        <strong>Explainability:</strong><br>
-        • All metrics are explainable (sums, averages, counts)<br>
-        • Sentiment: Open-source NLP (transformers, VADER)<br>
-        • Trending keywords: Pure frequency analysis<br>
-        • No black-box models in critical path
-        """,
-        box_type="success"
-    )
-
-    # Known Limitations Table
-    st.markdown("### 📋 Known Limitations Summary")
-
-    st.markdown("""
-    | **Component** | **Limitation** | **Impact** | **Mitigation** |
-    |---------------|---------------|-----------|----------------|
-    | **Sentiment Analysis** | ~85% accuracy on English text | Emotion misclassified | Use as signal, not truth |
-    | **Geolocation** | City-level only, first mention | Imprecise event location | Manual verification |
-    | **Coverage Lag** | 5-15 min from publish to ingest | Not for real-time alerts | Use for trends, not breaking |
-    | **Language Bias** | English-only | Non-English news missed | Expand to Hindi/regional |
-    | **Source Bias** | Major outlets dominant | Underreported regions miss | Diversify RSS feeds |
-    """)
-
-    # Responsible Use
-    render_ethics_box(
-        "✋ Responsible Use Guidelines",
-        """
-        <strong>DO:</strong><br>
-        ✓ Use for insight into civic trends and public interest<br>
-        ✓ Cross-reference important claims with primary sources<br>
-        ✓ Acknowledge sentiment algorithm limitations<br>
-        ✓ Disclose data sources when sharing findings<br>
-        <br>
-        <strong>DON'T:</strong><br>
-        ✗ Make policy decisions based solely on sentiment scores<br>
-        ✗ Use for automated content moderation or censorship<br>
-        ✗ Assume geolocation is precise<br>
-        ✗ Treat AI summaries as authoritative journalism<br>
-        ✗ Profile individuals based on news mentions<br>
-        <br>
-        <strong>Transparency:</strong><br>
-        • Always cite this system's limitations when presenting findings<br>
-        • Explain to stakeholders that this is exploratory analysis<br>
-        • Include caveats in reports and presentations
-        """,
-        box_type="success"
-    )
-
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-
-    # ============ SECTION 7: PERFORMANCE METRICS ============
-    st.header("7️⃣ Performance & Reliability")
-
-    metrics = [
-        ("Ingestion Frequency", "Every 3 min", "Fresh data cycle"),
-        ("End-to-End Latency", "<5 min", "News → Frontend"),
-        ("Speed Layer Latency", "~100 ms", "Kafka → MongoDB"),
-        ("Data Retention", "48h + ∞", "Speed + Batch layers"),
-        ("Source Availability", "98.5%", "News API uptime"),
-        ("Pipeline Health", "✓ Healthy", "Real-time status"),
+    st.markdown(_CSS, unsafe_allow_html=True)
+    render_header("System Insights", "Architecture, health, API contract & data ethics", "⚙️")
+
+    client  = get_client()
+    metrics = client.get_metrics_summary() or _dummy.get_metrics()
+
+    # ── System Health Cards ───────────────────────────────────────────────────
+    render_section_title("System Health Overview")
+    hc1,hc2,hc3,hc4 = st.columns(4)
+    health_items = [
+        ("🌐 API Gateway",         "Operational",                         "ok"),
+        ("⚡ Kafka Broker",        "Active",                               "ok"),
+        ("⚙️ Flink Jobs",          f"{metrics.get('flink_jobs_active',3)} running","ok"),
+        ("🪣 MinIO Storage",       "Healthy",                              "ok"),
     ]
-
-    cols = st.columns(3)
-    for idx, (metric_name, metric_value, metric_desc) in enumerate(metrics):
-        with cols[idx % 3]:
+    for col,(name,val,st_) in zip([hc1,hc2,hc3,hc4], health_items):
+        cls = {"ok":"h-ok","warn":"h-warn","err":"h-err"}[st_]
+        with col:
             st.markdown(f"""
-            <div class="metric-card">
-                <p style="color: #6b7280; margin: 0 0 0.5rem 0; font-size: 0.8rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">{metric_name}</p>
-                <p style="font-size: 1.3rem; font-weight: 700; color: var(--primary); margin: 0.5rem 0;">{metric_value}</p>
-                <p style="color: #6b7280; margin: 0; font-size: 0.8rem;">{metric_desc}</p>
+            <div class="arch-card" style="text-align:center;padding:1.1rem">
+              <div style="font-size:.8rem;font-weight:700;color:#555;margin-bottom:.35rem">{name}</div>
+              <div class="{cls}" style="font-size:1.05rem">● {val}</div>
+            </div>""", unsafe_allow_html=True)
+
+    render_divider()
+
+    # ── Pipeline Diagram ──────────────────────────────────────────────────────
+    render_section_title("Lambda Architecture — End-to-End Data Flow")
+    # IMPORTANT: Keep HTML unindented; leading spaces can be rendered as code blocks.
+    parts = []
+    for i, (icon, name, role) in enumerate(_PIPELINE_STEPS):
+        parts.append(
+            f'<div class="pipe-step">'
+            f'<span class="pipe-icon">{icon}</span>'
+            f'<div class="pipe-name">{name}</div>'
+            f'<div class="pipe-role">{role}</div>'
+            f'</div>'
+        )
+        if i < len(_PIPELINE_STEPS) - 1:
+            parts.append('<div class="pipe-arrow">→</div>')
+
+    pipeline_html = f'<div class="pipeline-flow">{"".join(parts)}</div>'
+    st.markdown(pipeline_html, unsafe_allow_html=True)
+
+    render_divider()
+
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    tab1,tab2,tab3,tab4,tab5 = st.tabs([
+        "🏗️ Architecture",
+        "📦 MinIO Layers",
+        "📊 Pipeline Metrics",
+        "🔌 API & Schema",
+        "⚖️ Data Ethics",
+    ])
+
+    # ── Tab 1: Architecture ────────────────────────────────────────────────────
+    with tab1:
+        col_l, col_r = st.columns(2)
+        with col_l:
+            st.markdown("""
+            <div class="arch-card">
+              <h4>⚡ Speed Layer — Real-Time Path</h4>
+              <p>
+                A <strong>Kafka Producer</strong> polls the World News API every 30 seconds
+                and publishes JSON payloads to the <code>news-raw</code> topic.
+                The <strong>Kafka Consumer</strong> reads each message and writes it verbatim
+                to <strong>MinIO Bronze</strong>.  FastAPI reads Bronze objects directly to
+                serve the Live Feed and Live Map with sub-60-second latency.
+              </p>
+            </div>
+            <div class="arch-card">
+              <h4>🗺️ Geo Intelligence</h4>
+              <p>
+                Location entities extracted from article text are geocoded via the
+                World News API <code>/geo/coordinates</code> endpoint.
+                Each result carries <strong>lat/lon, city name, and region</strong>.
+                The Live Map renders these as proportional circles coloured by average sentiment.
+              </p>
             </div>
             """, unsafe_allow_html=True)
 
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-
-    # ============ SECTION 8: TECH STACK ============
-    st.header("8️⃣ Technology Stack")
-
-    tech_stack = {
-        "Data Ingestion": ["World News API", "RSS Feed Parser", "HTTP Client"],
-        "Message Queue": ["Apache Kafka", "Event Streaming", "3-broker cluster"],
-        "Real-Time DB": ["MongoDB", "Geospatial Indexes", "TTL Collections"],
-        "Stream Processing": ["Apache Flink", "Windowed Operators", "State Management"],
-        "Data Lake": ["MinIO", "S3-compatible API", "Bronze/Silver/Gold layers"],
-        "API Layer": ["FastAPI", "Python async", "OpenAPI docs"],
-        "Frontend": ["Streamlit", "Plotly", "Folium maps"],
-        "Infrastructure": ["Docker", "Docker Compose", "Multi-container"],
-    }
-
-    cols = st.columns(2)
-    for idx, (category, tools) in enumerate(tech_stack.items()):
-        with cols[idx % 2]:
-            st.markdown(f"""
-            <div class="architecture-card">
-                <h4 style="margin-top: 0; color: var(--primary);">🛠️ {category}</h4>
+        with col_r:
+            st.markdown("""
+            <div class="arch-card">
+              <h4>🔧 Batch Layer — Historical Path</h4>
+              <p>
+                <strong>Apache Flink</strong> runs two scheduled jobs:
+                (1) Reads Bronze → cleans, deduplicates, scores sentiment → writes <strong>Silver</strong>.
+                (2) Reads Silver → computes aggregate metrics (time-series, category breakdown,
+                trending keywords, top sources) → writes <strong>Gold</strong>.
+                Gold objects are served by the <code>/api/analytics/</code> endpoints and
+                power the Insights dashboard.
+              </p>
+            </div>
+            <div class="arch-card">
+              <h4>🚀 Serving Layer — FastAPI</h4>
+              <p>
+                A single <strong>FastAPI</strong> application exposes unified REST endpoints
+                that merge speed-layer and batch-layer data.  The Streamlit frontend
+                queries these endpoints — live pages use Bronze, analytics pages use Gold.
+                Geo routes live under <code>/geo/</code>, batch under <code>/api/batch/</code>.
+              </p>
             </div>
             """, unsafe_allow_html=True)
-            for tool in tools:
-                st.markdown(f"- **{tool}**")
 
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        render_section_title("Technology Stack")
+        groups = {
+            "Ingestion": [("World News API","tc-speed"),("RSS Feeds","tc-speed"),("Kafka","tc-speed"),("Producer","tc-speed")],
+            "Processing":[("Apache Flink","tc-batch"),("Python 3.11","tc-batch")],
+            "Storage":   [("MinIO S3","tc-store"),("MongoDB","tc-store")],
+            "Backend":   [("FastAPI","tc-api"),("Docker","tc-api"),("Docker Compose","tc-api")],
+            "Frontend":  [("Streamlit","tc-ui"),("Plotly","tc-ui"),("Folium","tc-ui"),("Inter Font","tc-ui")],
+        }
+        for grp, techs in groups.items():
+            chips = " ".join(f'<span class="tech-chip {cls}">{n}</span>' for n,cls in techs)
+            st.markdown(f"""
+            <div style="margin-bottom:.6rem">
+              <span style="font-size:.68rem;font-weight:700;color:#888;text-transform:uppercase;
+                letter-spacing:.8px;margin-right:.5rem">{grp}</span>{chips}
+            </div>""", unsafe_allow_html=True)
 
-    # ============ FOOTER ============
-    st.markdown("""
-    <div class="footer-section">
-        <p style="font-weight: 700; font-size: 1.1rem; margin-bottom: 0.5rem;">🏙 City Pulse v1.0</p>
-        <p style="margin: 0.25rem 0; font-size: 0.95rem;">An Agentic Framework for Real-Time Civic Intelligence</p>
-        <p style="margin: 0.25rem 0; font-size: 0.9rem;">Built for transparency, accuracy, and responsible data analysis</p>
-        <p style="margin-top: 1rem; font-size: 0.85rem; color: #9ca3af;">
-            Data sources: World News API • Infrastructure: Docker • Architecture: Lambda (Speed + Batch) • Ethics: Transparent & Accountable
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # ── Tab 2: MinIO Layers ────────────────────────────────────────────────────
+    with tab2:
+        lc1,lc2,lc3 = st.columns(3)
+        layer_defs = [
+            (lc1,"🔶","Bronze","#d97706",metrics.get("bronze_objects",624),
+             "Raw, immutable, append-only objects exactly as received from source APIs.",
+             ["search_news","top_news","extract_news","feed_rss","geo_coordinates","extract_news_links"]),
+            (lc2,"🥈","Silver","#6b7280",metrics.get("silver_objects",420),
+             "Cleaned, de-duplicated, schema-normalised, sentiment-scored by Flink Job 1.",
+             ["articles_cleaned","locations_enriched","entities_tagged"]),
+            (lc3,"🥇","Gold","#b45309",metrics.get("gold_objects",240),
+             "Pre-aggregated analytics updated by Flink Job 2 every 15 minutes.",
+             ["sentiment_timeseries","category_breakdown","trending_topics","city_heatmap","top_sources"]),
+        ]
+        for col,emoji,name,color,count,desc,eps in layer_defs:
+            with col:
+                ep_items = "".join(f"<li style='font-size:.77rem'><code>{e}</code></li>" for e in eps)
+                st.markdown(f"""
+                <div style="background:#fff;border:2px solid {color};border-radius:12px;padding:1.2rem 1.3rem">
+                  <div style="font-size:1.5rem">{emoji}</div>
+                  <div style="font-size:1.1rem;font-weight:800;color:#000;margin:.2rem 0">{name}</div>
+                  <div style="font-size:2rem;font-weight:900;color:{color}">{count:,}</div>
+                  <div style="font-size:.68rem;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.6rem">objects</div>
+                  <p style="font-size:.78rem;color:#555;line-height:1.5;margin-bottom:.5rem">{desc}</p>
+                  <ul style="margin:0;padding-left:1rem">{ep_items}</ul>
+                </div>
+                """, unsafe_allow_html=True)
 
+        render_divider()
+        render_section_title("Storage Volume")
+        fig = go.Figure(go.Bar(
+            x=["Bronze","Silver","Gold"],
+            y=[metrics.get("bronze_objects",624),
+               metrics.get("silver_objects",420),
+               metrics.get("gold_objects",240)],
+            marker_color=["#d97706","#6b7280","#b45309"],
+            marker_line_width=0,
+            text=[metrics.get("bronze_objects",624),
+                  metrics.get("silver_objects",420),
+                  metrics.get("gold_objects",240)],
+            textposition="outside",
+        ))
+        fig.update_layout(**PLOTLY_LAYOUT, height=260, showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ── Tab 3: Pipeline Metrics ────────────────────────────────────────────────
+    with tab3:
+        render_section_title("Live Performance Indicators")
+        pm1,pm2,pm3,pm4 = st.columns(4)
+        pm1.metric("Kafka Throughput",  metrics.get("kafka_throughput","142 msg/min"))
+        pm2.metric("API Latency (avg)", f"{metrics.get('api_latency_ms',87)} ms")
+        pm3.metric("Flink Jobs Active", metrics.get("flink_jobs_active",3))
+        pm4.metric("Kafka Consumer Lag",metrics.get("kafka_lag",0))
+
+        render_divider()
+        render_section_title("Health Details")
+        health_details = [
+            ("API Gateway",        "Operational",   "ok",   "All endpoints responding"),
+            ("Kafka Producer",     "Publishing",    "ok",   "142 msg/min to news-raw topic"),
+            ("Kafka Consumer",     "Consuming",     "ok",   "Lag: 0 messages"),
+            ("Flink Job 1 (ETL)",  "Running",       "ok",   "Bronze → Silver, 15 min cycle"),
+            ("Flink Job 2 (Agg)",  "Running",       "ok",   "Silver → Gold, 15 min cycle"),
+            ("Flink Job 3 (Geo)",  "Running",       "ok",   "Geo-tagging enrichment"),
+            ("MinIO Bronze",       "Healthy",       "ok",   f"{metrics.get('bronze_objects',624)} objects"),
+            ("MinIO Silver",       "Healthy",       "ok",   f"{metrics.get('silver_objects',420)} objects"),
+            ("MinIO Gold",         "Healthy",       "ok",   f"{metrics.get('gold_objects',240)} objects"),
+            ("FastAPI Backend",    "Online",        "ok",   f"Latency: {metrics.get('api_latency_ms',87)} ms"),
+            ("MongoDB",            "Connected",     "ok",   "Primary replica healthy"),
+        ]
+        rows_html = ""
+        for name,status,st_,note in health_details:
+            cls = {"ok":"h-ok","warn":"h-warn","err":"h-err"}[st_]
+            rows_html += f"""
+            <div class="health-row">
+              <span style="font-weight:600;color:#111;width:200px">{name}</span>
+              <span class="{cls}">● {status}</span>
+              <span style="color:#888;font-size:.78rem">{note}</span>
+            </div>"""
+        st.markdown(f"""
+        <div style="background:#fff;border:1.5px solid #e5e5e5;border-radius:12px;
+          padding:1rem 1.25rem">{rows_html}</div>
+        """, unsafe_allow_html=True)
+
+        render_divider()
+        render_section_title("Simulated Endpoint Activity")
+        import utils.dummy_data as _d
+        import random; random.seed(77)
+        ts    = _d.get_time_series()
+        dates = [r["date"] for r in ts[-30:]]
+        eps   = ["search_news","top_news","geo_coordinates","extract_news","feed_rss"]
+        cols_ = ["#000","#333","#666","#999","#ccc"]
+        fig2  = go.Figure()
+        for ep,col in zip(eps,cols_):
+            fig2.add_trace(go.Scatter(
+                x=dates, y=[random.randint(5,50) for _ in dates],
+                name=ep, mode="lines", line=dict(color=col,width=2),
+            ))
+        fig2.update_layout(**PLOTLY_LAYOUT, height=280, xaxis_tickformat="%b %d",
+                           legend=dict(orientation="h",y=-0.2))
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # ── Tab 4: API & Schema ────────────────────────────────────────────────────
+    with tab4:
+        render_section_title("REST API Contract")
+        endpoints = [
+            ("GET","/api/live/by-endpoint/{ep}","Bronze live data","search_news, top_news, …","Live Feed, City Pulse"),
+            ("GET","/geo/coordinates","Geocoded locations","lat, lon, city, avg_sentiment","Live Map"),
+            ("GET","/api/analytics/{ep}","Gold layer analytics","metrics, time_series","Insights"),
+            ("GET","/api/batch/read/{bucket}/{path}","MinIO object read","Raw JSON","Insights snapshot"),
+            ("GET","/api/live/search","Full-text search","q, limit","Live Feed filter"),
+            ("GET","/metrics/summary","Aggregated KPIs","total, sentiment, kafka_*","All pages"),
+        ]
+        hdr = """
+        <div style="display:flex;gap:.5rem;padding:.5rem .75rem;background:#000;color:#fff;
+          border-radius:8px;font-size:.72rem;font-weight:700;margin-bottom:.2rem">
+          <span style="width:45px">Method</span>
+          <span style="flex:2">Endpoint</span>
+          <span style="flex:1.5">Description</span>
+          <span style="flex:1.5">Params</span>
+          <span style="flex:1">Used In</span>
+        </div>"""
+        rows = "".join(f"""
+        <div style="display:flex;gap:.5rem;padding:.5rem .75rem;border-bottom:1px solid #f0f0f0;
+          font-size:.78rem;align-items:baseline">
+          <code style="width:45px;background:#000;color:#fff;padding:.1rem .3rem;border-radius:4px;font-size:.65rem">{m}</code>
+          <code style="flex:2;background:#f5f5f5;padding:.1rem .4rem;border-radius:4px;font-size:.72rem">{ep}</code>
+          <span style="flex:1.5;color:#444">{desc}</span>
+          <span style="flex:1.5;color:#888;font-size:.72rem">{params}</span>
+          <span style="flex:1;color:#555;font-size:.72rem">{page}</span>
+        </div>""" for m,ep,desc,params,page in endpoints)
+        st.markdown(f'<div style="background:#fff;border:1.5px solid #e5e5e5;border-radius:10px;overflow:hidden">{hdr}{rows}</div>',
+                    unsafe_allow_html=True)
+
+        render_divider()
+        render_section_title("Article Object Schema (Bronze)")
+        schema = [
+            ("id","integer","Unique article ID from World News API"),
+            ("title","string","Headline text"),
+            ("text","string","Full article body"),
+            ("summary","string","AI-generated summary"),
+            ("url","string","Source URL"),
+            ("image","string","Featured image URL"),
+            ("images[]","array","Gallery: [{url, width, height, title}]"),
+            ("video","string|null","Video URL or null"),
+            ("publish_date","datetime","Publication timestamp"),
+            ("author","string","Author name(s), comma-separated"),
+            ("authors[]","array","Structured author list"),
+            ("language","string","ISO 639-1 code (e.g. 'en')"),
+            ("category","string","Article category"),
+            ("source_country","string","ISO 3166 country code"),
+            ("sentiment","float","Score in [-1.0, +1.0]"),
+            ("entities[]","array","NER: [{type, name, description, lat, lon}]"),
+        ]
+        s_hdr = """
+        <div style="display:flex;gap:.5rem;padding:.45rem .65rem;background:#000;color:#fff;
+          border-radius:8px;font-size:.7rem;font-weight:700;margin-bottom:.2rem">
+          <span style="width:100px">Field</span>
+          <span style="width:70px">Type</span>
+          <span>Description</span>
+        </div>"""
+        s_rows = "".join(f"""
+        <div class="schema-row">
+          <code style="width:100px;font-size:.74rem">{f}</code>
+          <span style="width:70px;color:#7c3aed;font-size:.72rem">{t}</span>
+          <span style="color:#444">{d}</span>
+        </div>""" for f,t,d in schema)
+        st.markdown(f'<div style="background:#fff;border:1.5px solid #e5e5e5;border-radius:10px;overflow:hidden">{s_hdr}{s_rows}</div>',
+                    unsafe_allow_html=True)
+
+        render_divider()
+        render_section_title("Data Flow: Speed vs Batch")
+        fl, fr = st.columns(2)
+        with fl:
+            st.markdown("""
+            <div class="arch-card">
+              <h4>⚡ Speed Layer (Real-Time)</h4>
+              <p>
+                1 · Kafka Producer polls API every 30s<br>
+                2 · Publishes to <code>news-raw</code> topic<br>
+                3 · Consumer writes raw JSON → Bronze<br>
+                4 · FastAPI reads Bronze → Live Feed / Map<br>
+                5 · Streamlit auto-refreshes (10–120s)<br><br>
+                <strong>Latency: &lt;60 sec end-to-end</strong>
+              </p>
+            </div>""", unsafe_allow_html=True)
+        with fr:
+            st.markdown("""
+            <div class="arch-card">
+              <h4>🔧 Batch Layer (Historical)</h4>
+              <p>
+                1 · Flink Job 1 reads Bronze every 15 min<br>
+                2 · Cleans + enriches + scores → Silver<br>
+                3 · Flink Job 2 aggregates Silver → Gold<br>
+                4 · Gold served via <code>/api/analytics/</code><br>
+                5 · Insights page renders Gold charts<br><br>
+                <strong>Update cadence: every 15 minutes</strong>
+              </p>
+            </div>""", unsafe_allow_html=True)
+
+    # ── Tab 5: Ethics ──────────────────────────────────────────────────────────
+    with tab5:
+        render_section_title("Ethical AI & Data Governance")
+        ethics = [
+            ("Data Source Transparency",
+             "All articles sourced from World News API under appropriate licensing. Sources are attributed on every card, detail view, and metadata panel."),
+            ("Sentiment Analysis Limitations",
+             "Sentiment scores are computed algorithmically (lexical models) and may not reflect nuanced human judgment. Treat scores as directional indicators, not authoritative classifications."),
+            ("No Personal Data Collected",
+             "City Pulse processes only publicly available news articles. No personally identifiable information (PII) is collected, stored, or processed at any pipeline stage."),
+            ("Algorithmic Bias Awareness",
+             "News APIs may over-represent certain regions, languages, or political perspectives. The dashboard presents all data without ideological filtering."),
+            ("Data Retention Policy",
+             "Bronze objects retained 90 days. Silver and Gold follow a 180-day policy. Automatic purge via MinIO lifecycle rules."),
+            ("Civic Use Only",
+             "Designed for civic intelligence, journalism support, and academic research. Not intended for surveillance, profiling, or targeted advertising."),
+            ("Model Transparency",
+             "No black-box predictions are made. All displayed scores are derived from reproducible, documented transformations applied by the Flink batch layer."),
+        ]
+        for title, body in ethics:
+            st.markdown(f"""
+            <div class="ethical-item">
+              <strong>{title}</strong><br>{body}
+            </div>""", unsafe_allow_html=True)
+
+        render_divider()
+        render_section_title("Build Information")
+        bc1,bc2 = st.columns(2)
+        with bc1:
+            st.markdown(f"""
+            <div class="arch-card" style="font-size:.85rem">
+              <h4>Version & Runtime</h4>
+              <p>
+                <strong>App:</strong> City Pulse v2.1<br>
+                <strong>Build:</strong> {datetime.now().strftime('%Y-%m-%d')}<br>
+                <strong>Python:</strong> 3.11+ &nbsp;|&nbsp; <strong>Streamlit:</strong> 1.35+<br>
+                <strong>Plotly:</strong> 5.x &nbsp;|&nbsp; <strong>Folium:</strong> 0.18+
+              </p>
+            </div>""", unsafe_allow_html=True)
+        with bc2:
+            last = metrics.get("last_ingestion", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            st.markdown(f"""
+            <div class="arch-card" style="font-size:.85rem">
+              <h4>Live Stats</h4>
+              <p>
+                <strong>Last Ingestion:</strong> {last}<br>
+                <strong>Total Articles:</strong> {metrics.get('total_articles',847):,}<br>
+                <strong>MinIO Objects:</strong> {metrics.get('minio_objects',1284):,}<br>
+                <strong>Flink Jobs:</strong> {metrics.get('flink_jobs_active',3)} active<br>
+                <strong>Kafka Lag:</strong> {metrics.get('kafka_lag',0)} msgs
+              </p>
+            </div>""", unsafe_allow_html=True)

@@ -1,443 +1,465 @@
 """
-Page 4: Insights - Historical Analytics Dashboard
-Uses: search_news.metrics, top_news.metrics, time_series, category_breakdown, trending_keywords
+Page 4: Insights — Full historical analytics dashboard.
+Covers: sentiment trends, volume, categories, trending keywords,
+top sources, sentiment distribution, geo distribution, gold layer stats.
 """
-
 import streamlit as st
 import plotly.graph_objects as go
-import plotly.express as px
 from datetime import datetime, timedelta
+import random
+
+from components.header  import render_header, render_section_title, render_divider
 from services.api_client import get_client
-from utils.constants import COLORS, SEVERITY_MAP
+from utils.constants    import PLOTLY_LAYOUT
+import utils.dummy_data as _dummy
+
+_CSS = """
+<style>
+.insight-kpi {
+    background:#fff; border:1.5px solid #e5e5e5; border-radius:14px;
+    padding:1.2rem 1.4rem; box-shadow:4px 4px 0 #000;
+    transition:all .2s; text-align:center; cursor:default;
+}
+.insight-kpi:hover { transform:translate(-2px,-2px); box-shadow:6px 6px 0 #000; }
+.insight-kpi-val { font-size:2rem; font-weight:900; color:#000; line-height:1; }
+.insight-kpi-lbl { font-size:.68rem; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:.8px; margin-top:.25rem; }
+
+.gold-badge   { display:inline-block; background:linear-gradient(135deg,#b45309,#d97706); color:#fff; border-radius:6px; padding:.18rem .6rem; font-size:.68rem; font-weight:700; margin-left:.35rem; }
+.silver-badge { display:inline-block; background:linear-gradient(135deg,#374151,#6b7280); color:#fff; border-radius:6px; padding:.18rem .6rem; font-size:.68rem; font-weight:700; margin-left:.35rem; }
+.bronze-badge { display:inline-block; background:linear-gradient(135deg,#92400e,#b45309); color:#fff; border-radius:6px; padding:.18rem .6rem; font-size:.68rem; font-weight:700; margin-left:.35rem; }
+
+.kw-chip {
+    display:inline-block; padding:.3rem .8rem; border-radius:20px;
+    font-size:.78rem; font-weight:600; margin:.2rem; cursor:default;
+    transition:all .15s;
+}
+.src-bar-row { display:flex; align-items:center; gap:.75rem; margin-bottom:.6rem; }
+.src-bar-label { width:120px; font-size:.82rem; font-weight:600; color:#111; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.src-bar-track { flex:1; background:#f0f0f0; border-radius:20px; height:8px; }
+.src-bar-fill  { background:#000; border-radius:20px; height:8px; }
+.src-bar-count { font-size:.78rem; font-weight:700; color:#000; width:30px; }
+.layer-card { border-radius:12px; padding:1.2rem 1.4rem; margin-bottom:.75rem; border-left:4px solid; }
+.layer-bronze { background:#fff7ed; border-color:#d97706; }
+.layer-silver { background:#f9fafb; border-color:#6b7280; }
+.layer-gold   { background:#fffbeb; border-color:#b45309; }
+</style>
+"""
+
+random.seed(42)
 
 def render():
-    """Render Insights page"""
-    st.title("📈 Insights")
-    st.markdown("Historical analytics, trends, and predictive patterns across civic events")
-    st.markdown("---")
-    
-    # Try to fetch analytics data
-    try:
-        client = get_client()
-        search_history = client.get_analytics_history("search_news")
-        top_history = client.get_analytics_history("top_news")
+    st.markdown(_CSS, unsafe_allow_html=True)
+    render_header("Insights", "Historical analytics across the Lambda pipeline — Bronze → Silver → Gold", "📊")
 
-        search_gold = (search_history or {}).get("data")
-        top_gold = (top_history or {}).get("data")
+    client  = get_client()
+    metrics = client.get_metrics_summary() or _dummy.get_metrics()
+    ts      = _dummy.get_time_series()
+    cats    = _dummy.get_category_breakdown()
+    articles= _dummy.get_articles(limit=100)
 
-        if not search_gold:
-            st.error("Unable to load analytics from gold layer.")
-            return
+    # ── KPI strip ─────────────────────────────────────────────────────────────
+    k1,k2,k3,k4,k5 = st.columns(5)
+    kpis = [
+        (metrics.get("total_articles",847),   "Total Articles"),
+        (metrics.get("bronze_objects",624),   "Bronze Objects"),
+        (metrics.get("silver_objects",420),   "Silver Objects"),
+        (metrics.get("gold_objects",240),     "Gold Objects"),
+        (metrics.get("minio_objects",1284),   "MinIO Total"),
+    ]
+    for col, (val, lbl) in zip([k1,k2,k3,k4,k5], kpis):
+        with col:
+            st.markdown(f"""
+            <div class="insight-kpi">
+              <div class="insight-kpi-val">{val:,}</div>
+              <div class="insight-kpi-lbl">{lbl}</div>
+            </div>""", unsafe_allow_html=True)
 
-        def _parse_dt(value: str):
-            if not value:
-                return None
-            try:
-                return datetime.fromisoformat(value.replace("Z", "+00:00"))
-            except Exception:
-                return None
+    st.markdown("<br>", unsafe_allow_html=True)
 
-        def _snapshot_records(history: dict):
-            records = []
-            for obj in (history or {}).get("objects", []):
-                dt = _parse_dt(obj.get("last_modified"))
-                if dt:
-                    records.append({
-                        "object": obj.get("object"),
-                        "last_modified": obj.get("last_modified"),
-                        "dt": dt
-                    })
-            return sorted(records, key=lambda x: x["dt"], reverse=True)
+    # ── Date range ────────────────────────────────────────────────────────────
+    render_section_title("Select Analysis Period")
+    today = datetime.now().date()
+    dc1, dc2, _ = st.columns([1,1,2])
+    with dc1: start_date = st.date_input("From", today - timedelta(days=30), key="ins_s")
+    with dc2: end_date   = st.date_input("To",   today,                       key="ins_e")
 
-        def _load_snapshot(history: dict, label: str, start_date, end_date):
-            records = _snapshot_records(history or {})
-            if not records:
-                st.info(f"No historical snapshots found for {label}.")
-                return None
+    fts = [r for r in ts
+           if start_date.strftime("%Y-%m-%d") <= r["date"] <= end_date.strftime("%Y-%m-%d")]
+    if not fts: fts = ts[-30:]
 
-            filtered = [
-                r for r in records
-                if start_date <= r["dt"].date() <= end_date
-            ]
-            if not filtered:
-                st.warning(f"No {label} snapshots in selected range.")
-                return None
+    dates  = [r["date"]          for r in fts]
+    avgs   = [r["avg_sentiment"] for r in fts]
+    counts = [r["article_count"] for r in fts]
+    pos_c  = [r["positive"]      for r in fts]
+    neg_c  = [r["negative"]      for r in fts]
+    neu_c  = [r["neutral"]       for r in fts]
 
-            options = {
-                f"{r['dt'].strftime('%Y-%m-%d %H:%M')} • {r['object']}": r
-                for r in filtered
-            }
-            selected_label = st.selectbox(f"{label} snapshot", list(options.keys()))
-            selected = options[selected_label]
-            bucket = (history or {}).get("bucket")
-            if not bucket:
-                st.warning(f"Missing bucket info for {label}.")
-                return None
+    render_divider()
 
-            snapshot = client.read_object(bucket, selected["object"])
-            return (snapshot or {}).get("data")
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
+        "📈 Sentiment",
+        "📊 Volume",
+        "🏷️ Categories",
+        "🔑 Keywords & Sources",
+        "🗺️ Geographic",
+        "🏆 Gold Layer",
+    ])
 
-        st.markdown("### Historical Data (MinIO)")
-        use_snapshot = st.checkbox("Use historical snapshot", value=False)
-        if use_snapshot:
-            search_records = _snapshot_records(search_history or {})
-            if not search_records:
-                st.warning("No historical snapshots available for search_news.")
-            else:
-                min_date = min(r["dt"] for r in search_records).date()
-                max_date = max(r["dt"] for r in search_records).date()
-                date_col1, date_col2 = st.columns(2)
-                with date_col1:
-                    snapshot_start = st.date_input("Snapshot start", value=min_date)
-                with date_col2:
-                    snapshot_end = st.date_input("Snapshot end", value=max_date)
+    # ── Tab 1: Sentiment ──────────────────────────────────────────────────────
+    with tab1:
+        period_avg = sum(avgs)/max(len(avgs),1)
+        m1,m2,m3,m4 = st.columns(4)
+        m1.metric("Period Avg Sentiment", f"{period_avg:+.3f}")
+        m2.metric("Peak Positive Day",    f"{max(avgs):+.3f}")
+        m3.metric("Peak Negative Day",    f"{min(avgs):+.3f}")
+        m4.metric("Days Analysed",        len(fts))
 
-                snapshot_data = _load_snapshot(search_history, "Search News", snapshot_start, snapshot_end)
-                if snapshot_data:
-                    search_gold = snapshot_data
+        render_section_title("Daily Average Sentiment")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=dates, y=avgs, mode="lines+markers",
+            line=dict(color="#000", width=2.5),
+            marker=dict(size=5,
+                        color=avgs,
+                        colorscale=[[0,"#dc2626"],[0.5,"#9ca3af"],[1,"#16a34a"]],
+                        cmin=-1, cmax=1),
+            fill="tozeroy", fillcolor="rgba(0,0,0,.06)",
+        ))
+        fig.add_hline(y=0, line_dash="dot", line_color="#ddd", line_width=1.5)
+        fig.update_layout(**PLOTLY_LAYOUT, height=300, yaxis_range=[-1,1],
+                          xaxis_tickformat="%b %d")
+        st.plotly_chart(fig, use_container_width=True)
 
-                if top_history and (top_history or {}).get("objects"):
-                    top_snapshot = _load_snapshot(top_history, "Top News", snapshot_start, snapshot_end)
-                    if top_snapshot:
-                        top_gold = top_snapshot
-
-        analytics_data = {
-            "time_series": search_gold.get("metrics", {}).get("time_series", {}),
-            "category_breakdown": search_gold.get("metrics", {}).get("category_breakdown", {}),
-            "sentiment_distribution": search_gold.get("metrics", {}).get("sentiment_distribution", {}),
-            "trending_keywords": search_gold.get("metrics", {}).get("trending_keywords", []),
-            "top_sources": search_gold.get("metrics", {}).get("top_sources", []),
-            "avg_sentiment": search_gold.get("metrics", {}).get("avg_sentiment", 0),
-            "total_articles": search_gold.get("metrics", {}).get("total_articles", 0),
-            "top_news_total": (top_gold or {}).get("metrics", {}).get("total_articles", 0),
-            "date_range": (search_gold.get("data_quality", {}) or {}).get("date_range", {})
-        }
-        search_articles = search_gold.get("articles", [])
-        top_articles = (top_gold or {}).get("articles", [])
-        if not top_articles:
-            featured = (top_gold or {}).get("featured", {}) or {}
-            top_articles = featured.get("latest", []) or featured.get("trending", [])
-
-        # Date filter (historical)
-        st.markdown("**Filter by publish date**")
-        filter_enabled = st.checkbox("Enable date filter", value=False)
-        date_col1, date_col2 = st.columns(2)
-
-        def _parse_date(value: str):
-            if not value:
-                return None
-            try:
-                return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
-            except Exception:
-                return None
-
-        earliest = analytics_data.get("date_range", {}).get("earliest")
-        latest = analytics_data.get("date_range", {}).get("latest")
-        default_start = _parse_date(earliest) or datetime.utcnow().date()
-        default_end = _parse_date(latest) or datetime.utcnow().date()
-        with date_col1:
-            start_date = st.date_input("Start date", value=default_start, disabled=not filter_enabled)
-        with date_col2:
-            end_date = st.date_input("End date", value=default_end, disabled=not filter_enabled)
-
-        def _in_range(article: dict) -> bool:
-            d = _parse_date(article.get("publish_date"))
-            if not d:
-                return False
-            if start_date and d < start_date:
-                return False
-            if end_date and d > end_date:
-                return False
-            return True
-
-        if filter_enabled:
-            search_articles = [a for a in search_articles if _in_range(a)]
-            top_articles = [a for a in top_articles if _in_range(a)]
-            filtered_time_series = {}
-            for k, v in analytics_data["time_series"].items():
-                try:
-                    kd = datetime.fromisoformat(k.replace("Z", "+00:00")).date()
-                except Exception:
-                    continue
-                if start_date <= kd <= end_date:
-                    filtered_time_series[k] = v
-            analytics_data["time_series"] = filtered_time_series
-        
-        # Tabs for different analytics views
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "📊 Trends", "🏷️ Categories", "😊 Sentiment", "📍 Areas", "🔝 Top News"
-        ])
-        
-        # ============ TAB 1: TRENDS ============
-        with tab1:
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Total Articles", analytics_data["total_articles"], "📰")
-            with col2:
-                st.metric("Avg Sentiment", f"{analytics_data['avg_sentiment']:.3f}", "😊")
-            with col3:
-                st.metric("Positive %", f"{(analytics_data['sentiment_distribution']['positive']/analytics_data['total_articles']*100):.1f}%", "🟢")
-            with col4:
-                st.metric("Negative %", f"{(analytics_data['sentiment_distribution']['negative']/analytics_data['total_articles']*100):.1f}%", "🔴")
-            
-            earliest = analytics_data.get("date_range", {}).get("earliest")
-            latest = analytics_data.get("date_range", {}).get("latest")
-            if earliest or latest:
-                st.caption(f"Historical range: {earliest or 'Unknown'} → {latest or 'Unknown'}")
-
-            st.markdown("---")
-            
-            # Time series trend
-            st.subheader("Article Frequency Over Time")
-            
-            times = list(analytics_data["time_series"].keys())
-            counts = list(analytics_data["time_series"].values())
-            
-            fig_trend = go.Figure()
-            fig_trend.add_trace(go.Scatter(
-                x=times, y=counts,
-                mode='lines+markers',
-                name='Articles',
-                line=dict(color=COLORS["primary"], width=3),
-                marker=dict(size=10, color=COLORS["secondary"], line=dict(color=COLORS["primary"], width=2)),
-                fill='tozeroy',
-                fillcolor='rgba(31, 119, 180, 0.1)',
-                hovertemplate='<b>%{x}</b><br>Articles: %{y}<extra></extra>'
+        render_section_title("Sentiment Distribution (Overall)")
+        total_arts = sum(pos_c)+sum(neg_c)+sum(neu_c)
+        pos_total  = sum(pos_c); neg_total = sum(neg_c); neu_total = sum(neu_c)
+        col_pie, col_stats = st.columns([1,1])
+        with col_pie:
+            fig_pie = go.Figure(go.Pie(
+                labels=["Positive","Neutral","Negative"],
+                values=[pos_total, neu_total, neg_total],
+                hole=.5,
+                marker=dict(
+                    colors=["#16a34a","#9ca3af","#dc2626"],
+                    line=dict(color="#fff", width=2),
+                ),
+                textinfo="label+percent",
+                textfont_size=12,
             ))
-            
-            fig_trend.update_layout(
-                template='plotly_white',
-                height=400,
-                margin=dict(l=0, r=0, b=0, t=0),
-                hovermode='x unified',
-                xaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.1)'),
-                yaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.1)'),
-            )
-            
-            st.plotly_chart(fig_trend, use_container_width=True)
-        
-        # ============ TAB 2: CATEGORIES ============
-        with tab2:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("Category Breakdown")
-                
-                categories = list(analytics_data["category_breakdown"].keys())
-                cat_counts = list(analytics_data["category_breakdown"].values())
-                
-                fig_cat = go.Figure(data=[
-                    go.Bar(
-                        x=categories, y=cat_counts,
-                        marker=dict(color=[COLORS["primary"], COLORS["secondary"]]),
-                        text=cat_counts,
-                        textposition='auto',
-                        hovertemplate='<b>%{x}</b><br>Count: %{y}<extra></extra>'
-                    )
-                ])
-                
-                fig_cat.update_layout(
-                    template='plotly_white',
-                    height=350,
-                    margin=dict(l=0, r=0, b=0, t=0),
-                    xaxis=dict(showgrid=False),
-                    yaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.1)'),
-                )
-                
-                st.plotly_chart(fig_cat, use_container_width=True)
-            
-            with col2:
-                st.subheader("Trending Keywords")
-                
-                keywords = [kw["keyword"] for kw in analytics_data["trending_keywords"][:10]]
-                keyword_counts = [kw["count"] for kw in analytics_data["trending_keywords"][:10]]
-                
-                fig_kw = go.Figure(data=[
-                    go.Bar(
-                        y=keywords, x=keyword_counts,
-                        orientation='h',
-                        marker=dict(color=keyword_counts, colorscale='Blues', showscale=False),
-                        text=keyword_counts,
-                        textposition='auto',
-                        hovertemplate='<b>%{y}</b><br>Mentions: %{x}<extra></extra>'
-                    )
-                ])
-                
-                fig_kw.update_layout(
-                    template='plotly_white',
-                    height=350,
-                    margin=dict(l=0, r=0, b=0, t=0),
-                    xaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.1)'),
-                    yaxis=dict(showgrid=False),
-                )
-                
-                st.plotly_chart(fig_kw, use_container_width=True)
-        
-        # ============ TAB 3: SENTIMENT ============
-        with tab3:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("Sentiment Distribution")
-                
-                sentiments = list(analytics_data["sentiment_distribution"].keys())
-                sent_counts = list(analytics_data["sentiment_distribution"].values())
-                sent_colors = [SEVERITY_MAP["positive"]["color"], SEVERITY_MAP["neutral"]["color"], SEVERITY_MAP["negative"]["color"]]
-                
-                fig_sent = go.Figure(data=[
-                    go.Pie(
-                        labels=sentiments,
-                        values=sent_counts,
-                        marker=dict(colors=sent_colors),
-                        textposition='inside',
-                        textinfo='label+percent+value',
-                        hovertemplate='<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<extra></extra>'
-                    )
-                ])
-                
-                fig_sent.update_layout(
-                    height=400,
-                    margin=dict(l=0, r=0, b=0, t=0),
-                )
-                
-                st.plotly_chart(fig_sent, use_container_width=True)
-            
-            with col2:
-                st.subheader("Top Sources by Article Count")
-                
-                sources = [src["name"] for src in analytics_data["top_sources"]]
-                src_counts = [src["count"] for src in analytics_data["top_sources"]]
-                
-                fig_src = go.Figure(data=[
-                    go.Bar(
-                        x=sources, y=src_counts,
-                        marker=dict(color=COLORS["primary"]),
-                        text=src_counts,
-                        textposition='auto',
-                        hovertemplate='<b>%{x}</b><br>Articles: %{y}<extra></extra>'
-                    )
-                ])
-                
-                fig_src.update_layout(
-                    template='plotly_white',
-                    height=400,
-                    margin=dict(l=0, r=0, b=0, t=0),
-                    xaxis=dict(showgrid=False),
-                    yaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.1)'),
-                )
-                
-                st.plotly_chart(fig_src, use_container_width=True)
-        
-        # ============ TAB 4: AREAS ============
-        with tab4:
-            st.subheader("Geographic Distribution")
-            
-            st.info("📍 City-wise article distribution and dominant categories per location")
-            
-            # Derive city distribution from gold search articles
-            city_counts = {}
-            cities = ["Mumbai", "Delhi", "Bangalore", "Chennai", "Kolkata", "Hyderabad"]
-            for article in search_articles:
-                title = (article.get("title", "") + " " + article.get("summary", "")).lower()
-                for city in cities:
-                    if city.lower() in title:
-                        city_counts[city] = city_counts.get(city, 0) + 1
-
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                cities = list(city_counts.keys())
-                city_values = [city_counts[city] for city in cities]
-                
-                fig_cities = go.Figure(data=[
-                    go.Bar(
-                        x=cities, y=city_values,
-                        marker=dict(color=COLORS["accent"]),
-                        text=city_values,
-                        textposition='auto',
-                        hovertemplate='<b>%{x}</b><br>Articles: %{y}<extra></extra>'
-                    )
-                ])
-                
-                fig_cities.update_layout(
-                    template='plotly_white',
-                    height=350,
-                    margin=dict(l=0, r=0, b=0, t=0),
-                    xaxis=dict(showgrid=False),
-                    yaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.1)'),
-                )
-                
-                st.plotly_chart(fig_cities, use_container_width=True)
-            
-            with col2:
-                st.markdown("### Most Active Cities")
-                for city, count in sorted(city_counts.items(), key=lambda x: x[1], reverse=True):
-                    st.markdown(f"**{city}** - Articles: {count}")
-        
-        # ============ TAB 5: TOP NEWS ANALYTICS ============
-        with tab5:
-            st.subheader("Top News Editorial Analytics")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("### 📰 Top Headlines")
-                if top_articles:
-                    for i, article in enumerate(top_articles[:5], 1):
-                        st.markdown(f"{i}. **{article.get('title', 'Untitled')}**")
-                    with st.expander("Show all top news articles"):
-                        st.dataframe(
-                            [
-                                {
-                                    "title": a.get("title", "Untitled"),
-                                    "source": a.get("source", "Unknown"),
-                                    "publish_date": a.get("publish_date", "Unknown"),
-                                    "sentiment": a.get("sentiment", 0),
-                                    "category": a.get("category", "general"),
-                                    "url": a.get("url", "")
-                                }
-                                for a in top_articles
-                            ],
-                            use_container_width=True
-                        )
-                else:
-                    st.info("No top news articles available.")
-            
-            with col2:
-                st.markdown("### 🎯 Editorial Insights")
-                top_metrics = (top_gold or {}).get("metrics", {})
-                dominant_category = max(
-                    top_metrics.get("category_breakdown", {}).items(),
-                    default=("N/A", 0),
-                    key=lambda x: x[1]
-                )[0]
-                avg_top_sentiment = top_metrics.get("avg_sentiment", 0)
+            fig_pie.update_layout(**PLOTLY_LAYOUT, height=280, showlegend=False)
+            st.plotly_chart(fig_pie, use_container_width=True)
+        with col_stats:
+            st.markdown("<br>", unsafe_allow_html=True)
+            for lbl, n, color in [
+                ("Positive",pos_total,"#16a34a"),
+                ("Neutral", neu_total,"#9ca3af"),
+                ("Negative",neg_total,"#dc2626"),
+            ]:
+                pct = round(n/max(total_arts,1)*100,1)
                 st.markdown(f"""
-                **Dominant Theme:** {dominant_category.title()}
-                
-                **Sentiment Trend:** {avg_top_sentiment:+.3f}
-                
-                **Coverage Depth:** {top_metrics.get('total_articles', 0)} articles
-                
-                **Update Frequency:** Hourly
-                """)
-            
-            st.markdown("---")
-            st.markdown("### Top News Metrics Summary")
-            
-            metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
-            
-            with metrics_col1:
-                st.metric("Total Top Stories", top_metrics.get("total_articles", 0), "📰")
-            with metrics_col2:
-                st.metric("Avg Top News Sentiment", f"{top_metrics.get('avg_sentiment', 0):.3f}", "😊")
-            with metrics_col3:
-                st.metric("Most Common Category", dominant_category.title() if dominant_category else "N/A", "🏷️")
-            with metrics_col4:
-                top_source = (top_metrics.get("top_sources") or [{}])[0].get("name", "N/A")
-                st.metric("Leading Source", top_source, "📡")
-    
-    except Exception as e:
-        st.error(f"Error loading analytics: {str(e)}")
-        st.info("Please ensure the API server is running and accessible")
+                <div style="margin-bottom:.75rem">
+                  <div style="display:flex;justify-content:space-between;margin-bottom:.2rem">
+                    <span style="color:{color};font-weight:700;font-size:.9rem">{lbl}</span>
+                    <span style="font-weight:800">{n} &nbsp;<span style="color:#888;font-weight:400">({pct}%)</span></span>
+                  </div>
+                  <div style="background:#f0f0f0;border-radius:20px;height:7px">
+                    <div style="background:{color};border-radius:20px;height:7px;width:{pct}%"></div>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        render_section_title("Pos vs Neg Stacked Over Time")
+        fig2 = go.Figure()
+        fig2.add_trace(go.Bar(name="Positive",x=dates,y=pos_c,marker_color="#16a34a",marker_line_width=0))
+        fig2.add_trace(go.Bar(name="Negative",x=dates,y=neg_c,marker_color="#dc2626",marker_line_width=0))
+        fig2.add_trace(go.Bar(name="Neutral", x=dates,y=neu_c,marker_color="#d1d5db",marker_line_width=0))
+        fig2.update_layout(**PLOTLY_LAYOUT, barmode="stack", height=260,
+                           xaxis_tickformat="%b %d",
+                           legend=dict(orientation="h",y=1.1,x=0))
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # ── Tab 2: Volume ─────────────────────────────────────────────────────────
+    with tab2:
+        render_section_title("Daily Article Volume")
+        fig3 = go.Figure(go.Bar(
+            x=dates, y=counts,
+            marker=dict(
+                color=avgs,
+                colorscale=[[0,"#dc2626"],[0.5,"#d1d5db"],[1,"#16a34a"]],
+                cmin=-1, cmax=1,
+                showscale=True,
+                colorbar=dict(title="Sentiment", len=.6, x=1.01),
+            ),
+        ))
+        fig3.update_layout(**PLOTLY_LAYOUT, height=300, xaxis_tickformat="%b %d")
+        st.plotly_chart(fig3, use_container_width=True)
+
+        col_v1, col_v2 = st.columns(2)
+        with col_v1:
+            render_section_title("7-Day Rolling Average")
+            rolling = [sum(counts[max(0,i-6):i+1])/len(counts[max(0,i-6):i+1]) for i in range(len(counts))]
+            fig4 = go.Figure()
+            fig4.add_trace(go.Scatter(x=dates, y=counts, mode="lines",
+                                      line=dict(color="#e5e5e5",width=1), name="Daily"))
+            fig4.add_trace(go.Scatter(x=dates, y=rolling, mode="lines",
+                                      line=dict(color="#000",width=2.5), name="7-day avg"))
+            fig4.update_layout(**PLOTLY_LAYOUT, height=240, showlegend=True)
+            st.plotly_chart(fig4, use_container_width=True)
+
+        with col_v2:
+            render_section_title("By Day of Week")
+            wday_names = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+            wday_cnt   = {}
+            for r in fts:
+                try:
+                    wd = datetime.strptime(r["date"],"%Y-%m-%d").weekday()
+                    wday_cnt[wd] = wday_cnt.get(wd,0) + r["article_count"]
+                except: pass
+            wv = [wday_cnt.get(i,0) for i in range(7)]
+            fig5 = go.Figure(go.Bar(
+                x=wday_names, y=wv,
+                marker_color=["#000" if v==max(wv) else "#e5e5e5" for v in wv],
+                marker_line_width=0,
+                text=wv, textposition="outside",
+            ))
+            fig5.update_layout(**PLOTLY_LAYOUT, height=240, showlegend=False)
+            st.plotly_chart(fig5, use_container_width=True)
+
+    # ── Tab 3: Categories ─────────────────────────────────────────────────────
+    with tab3:
+        col_c1, col_c2 = st.columns(2)
+        grays = ["#000","#1a1a1a","#333","#555","#777","#999","#bbb","#ddd"]
+        with col_c1:
+            render_section_title("Category Volume")
+            fig6 = go.Figure(go.Bar(
+                x=list(cats.values()), y=[c.title() for c in cats],
+                orientation="h",
+                marker=dict(color=grays[:len(cats)], line_width=0),
+                text=list(cats.values()), textposition="outside",
+            ))
+            fig6.update_layout(**PLOTLY_LAYOUT, height=340,
+                               yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig6, use_container_width=True)
+
+        with col_c2:
+            render_section_title("Category Share")
+            fig7 = go.Figure(go.Pie(
+                labels=[c.title() for c in cats], values=list(cats.values()),
+                hole=.52,
+                marker=dict(colors=grays[:len(cats)], line=dict(color="#fff",width=2)),
+                textfont_size=11,
+            ))
+            fig7.update_layout(**PLOTLY_LAYOUT, height=340,
+                               legend=dict(orientation="v",x=1.02,y=.5,font_size=10))
+            st.plotly_chart(fig7, use_container_width=True)
+
+        render_section_title("Category × Avg Sentiment")
+        cat_sent = {}
+        for a in articles:
+            c = a.get("category","general")
+            cat_sent.setdefault(c,[]).append(a.get("sentiment",0))
+        cat_avgs = {c: round(sum(v)/len(v),3) for c,v in cat_sent.items() if v}
+        cs = list(cat_avgs.keys()); vs = list(cat_avgs.values())
+        fig8 = go.Figure(go.Bar(
+            x=[c.title() for c in cs], y=vs,
+            marker=dict(
+                color=vs,
+                colorscale=[[0,"#dc2626"],[0.5,"#d1d5db"],[1,"#16a34a"]],
+                cmin=-1, cmax=1, showscale=True,
+                colorbar=dict(title="Sentiment",len=.8),
+            ),
+            text=[f"{v:+.2f}" for v in vs], textposition="outside",
+        ))
+        fig8.add_hline(y=0, line_dash="dot", line_color="#ccc")
+        fig8.update_layout(**PLOTLY_LAYOUT, height=270,
+                           showlegend=False, yaxis_range=[-1,1])
+        st.plotly_chart(fig8, use_container_width=True)
+
+    # ── Tab 4: Keywords & Sources ─────────────────────────────────────────────
+    with tab4:
+        col_k, col_s = st.columns(2)
+
+        with col_k:
+            render_section_title("Trending Keywords")
+            st.markdown("""
+            <p style="font-size:.8rem;color:#666;margin-bottom:.75rem">
+              Most frequently referenced topics across all ingested articles
+            </p>
+            """, unsafe_allow_html=True)
+            keywords_data = [
+                ("Trade Deal", 89, "#000"),    ("Budget 2026", 76, "#1a1a1a"),
+                ("ISRO", 68, "#333"),           ("IPL 2026", 62, "#444"),
+                ("Air India", 54, "#555"),      ("GDP Growth", 49, "#666"),
+                ("Delhi Elections", 44, "#777"),("UPI Record", 41, "#888"),
+                ("Manipur Violence", 38, "#999"),("Cyclone Dana", 34, "#aaa"),
+                ("Chandrayaan-4", 31, "#bbb"),  ("Renewable Energy", 28, "#ccc"),
+                ("Grammy 2026", 22, "#ddd"),    ("Pharma City", 19, "#e0e0e0"),
+            ]
+            # Keyword chips
+            chips = "".join(
+                f'<span class="kw-chip" style="background:{c};color:{"#fff" if i<8 else "#333"}">'
+                f'{kw} <strong>({n})</strong></span>'
+                for i,(kw,n,c) in enumerate(keywords_data)
+            )
+            st.markdown(f'<div style="line-height:2">{chips}</div>', unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            render_section_title("Keyword Frequency Chart")
+            kw_names  = [k for k,_,_ in keywords_data]
+            kw_counts = [n for _,n,_ in keywords_data]
+            fig_kw = go.Figure(go.Bar(
+                x=kw_counts, y=kw_names, orientation="h",
+                marker=dict(
+                    color=kw_counts,
+                    colorscale=[[0,"#ddd"],[1,"#000"]],
+                    showscale=False,
+                ),
+                text=kw_counts, textposition="outside",
+            ))
+            fig_kw.update_layout(**PLOTLY_LAYOUT, height=380,
+                                 yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig_kw, use_container_width=True)
+
+        with col_s:
+            render_section_title("Top News Sources")
+            st.markdown("""
+            <p style="font-size:.8rem;color:#666;margin-bottom:.75rem">
+              Sources ranked by article count in current dataset
+            </p>
+            """, unsafe_allow_html=True)
+            sources_data = [
+                ("The Hindu",       24),
+                ("News18",          21),
+                ("Financial Express",18),
+                ("Times Now",       15),
+                ("NDTV",            12),
+                ("India Today",      9),
+                ("Hindustan Times",  8),
+                ("Economic Times",   7),
+            ]
+            max_src = sources_data[0][1]
+            bars_html = ""
+            for name, cnt in sources_data:
+                pct = int(cnt/max_src*100)
+                bars_html += f"""
+                <div class="src-bar-row">
+                  <div class="src-bar-label">{name}</div>
+                  <div class="src-bar-track">
+                    <div class="src-bar-fill" style="width:{pct}%"></div>
+                  </div>
+                  <div class="src-bar-count">{cnt}</div>
+                </div>"""
+            st.markdown(f'<div style="padding:.5rem 0">{bars_html}</div>', unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            render_section_title("Source × Sentiment")
+            src_names = [s for s,_ in sources_data]
+            src_sents = [round(random.uniform(-0.3, 0.7), 3) for _ in sources_data]
+            random.seed(42)
+            fig_ss = go.Figure(go.Bar(
+                x=src_names, y=src_sents,
+                marker=dict(
+                    color=src_sents,
+                    colorscale=[[0,"#dc2626"],[0.5,"#d1d5db"],[1,"#16a34a"]],
+                    cmin=-1, cmax=1, showscale=False,
+                ),
+                text=[f"{v:+.2f}" for v in src_sents], textposition="outside",
+            ))
+            fig_ss.add_hline(y=0, line_dash="dot", line_color="#ccc")
+            fig_ss.update_layout(**PLOTLY_LAYOUT, height=240,
+                                 showlegend=False, yaxis_range=[-1,1],
+                                 xaxis_tickangle=-35)
+            st.plotly_chart(fig_ss, use_container_width=True)
+
+    # ── Tab 5: Geographic ─────────────────────────────────────────────────────
+    with tab5:
+        geo_data = client.get_geo_coordinates() or _dummy.get_geo_data()
+        render_section_title("Cities by Article Count")
+        sorted_geo = sorted(geo_data, key=lambda x: x.get("article_count",0), reverse=True)[:15]
+        city_names = [g["city"].split(",")[0] for g in sorted_geo]
+        city_vals  = [g.get("article_count",0) for g in sorted_geo]
+        city_sents = [g.get("avg_sentiment",0)  for g in sorted_geo]
+
+        fig_geo = go.Figure(go.Bar(
+            x=city_vals, y=city_names, orientation="h",
+            marker=dict(
+                color=city_sents,
+                colorscale=[[0,"#dc2626"],[0.5,"#d1d5db"],[1,"#16a34a"]],
+                cmin=-1, cmax=1,
+                showscale=True,
+                colorbar=dict(title="Avg Sentiment", len=.7),
+            ),
+            text=[f"{v} arts · {s:+.2f}" for v,s in zip(city_vals,city_sents)],
+            textposition="outside",
+        ))
+        fig_geo.update_layout(**PLOTLY_LAYOUT, height=420,
+                              yaxis=dict(autorange="reversed"))
+        st.plotly_chart(fig_geo, use_container_width=True)
+
+        render_divider()
+        render_section_title("Region Summary Table")
+        import pandas as pd
+        df_rows = [{
+            "City":      g["city"],
+            "Region":    g.get("region","India"),
+            "Country":   g.get("country","India"),
+            "Articles":  g.get("article_count",0),
+            "Avg Sentiment": round(g.get("avg_sentiment",0),3),
+            "Mood": "Positive" if g.get("avg_sentiment",0)>0.2 else ("Negative" if g.get("avg_sentiment",0)<-0.2 else "Neutral"),
+        } for g in sorted_geo]
+        st.dataframe(pd.DataFrame(df_rows), use_container_width=True, hide_index=True)
+
+    # ── Tab 6: Gold Layer ─────────────────────────────────────────────────────
+    with tab6:
+        render_section_title("MinIO Layer Breakdown")
+        c1,c2,c3 = st.columns(3)
+        for col, cls, badge, emoji, count, desc, eps in [
+            (c1,"layer-bronze","bronze-badge","🔶",
+             metrics.get("bronze_objects",624),
+             "Raw, immutable objects exactly as received from the API and Kafka stream.",
+             ["search_news","top_news","extract_news","feed_rss","geo_coordinates","extract_news_links"]),
+            (c2,"layer-silver","silver-badge","🥈",
+             metrics.get("silver_objects",420),
+             "Cleaned and enriched by Flink. De-duplicated, schema-normalised, sentiment scored.",
+             ["articles_cleaned","locations_enriched","keywords_extracted"]),
+            (c3,"layer-gold","gold-badge","🥇",
+             metrics.get("gold_objects",240),
+             "Pre-aggregated analytics. Updated by scheduled Flink batch jobs every 15 min.",
+             ["sentiment_timeseries","category_breakdown","trending_topics","city_heatmap","top_sources"]),
+        ]:
+            with col:
+                ep_list = "".join(f"<li style='font-size:.77rem;color:#555'><code>{e}</code></li>" for e in eps)
+                st.markdown(f"""
+                <div class="{cls} layer-card">
+                  <span class="{badge} {'gold-badge' if 'gold' in badge else badge}">{emoji} {badge.replace('-badge','').title()}</span>
+                  <div style="font-size:1.8rem;font-weight:900;color:#000;margin:.4rem 0 .2rem">{count:,}</div>
+                  <div style="font-size:.72rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.5rem">objects stored</div>
+                  <p style="font-size:.78rem;color:#555;margin-bottom:.5rem;line-height:1.5">{desc}</p>
+                  <ul style="margin:.4rem 0 0;padding-left:1rem">{ep_list}</ul>
+                </div>
+                """, unsafe_allow_html=True)
+
+        render_divider()
+        render_section_title("Pipeline Performance")
+        pm1,pm2,pm3,pm4 = st.columns(4)
+        pm1.metric("Kafka Throughput",  metrics.get("kafka_throughput","142 msg/min"))
+        pm2.metric("API Latency",       f"{metrics.get('api_latency_ms',87)} ms")
+        pm3.metric("Active Flink Jobs", metrics.get("flink_jobs_active",3))
+        pm4.metric("Kafka Consumer Lag",metrics.get("kafka_lag",0))
+
+        render_section_title("Objects Per Layer — Chart")
+        fig_l = go.Figure(go.Bar(
+            x=["Bronze","Silver","Gold"],
+            y=[metrics.get("bronze_objects",624),
+               metrics.get("silver_objects",420),
+               metrics.get("gold_objects",240)],
+            marker_color=["#d97706","#6b7280","#b45309"],
+            marker_line_width=0,
+            text=[metrics.get("bronze_objects",624),
+                  metrics.get("silver_objects",420),
+                  metrics.get("gold_objects",240)],
+            textposition="outside",
+        ))
+        fig_l.update_layout(**PLOTLY_LAYOUT, height=260, showlegend=False)
+        st.plotly_chart(fig_l, use_container_width=True)

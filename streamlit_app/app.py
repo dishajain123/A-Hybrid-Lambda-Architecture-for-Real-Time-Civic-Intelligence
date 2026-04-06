@@ -63,9 +63,13 @@ st.markdown("""
         background: linear-gradient(180deg, #000000 0%, #1a1a1a 100%);
         border-right: 2px solid var(--color-secondary);
     }
-    
-    [data-testid="stSidebar"] * {
-        color: #FFFFFF !important;
+
+    [data-testid="stSidebar"] .stMarkdown p,
+    [data-testid="stSidebar"] .stMarkdown span,
+    [data-testid="stSidebar"] .stCheckbox label,
+    [data-testid="stSidebar"] .stSelectbox label,
+    [data-testid="stSidebar"] [role="radiogroup"] label {
+        color: #F3F4F6 !important;
     }
     
     /* Sidebar Header */
@@ -114,7 +118,7 @@ st.markdown("""
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 1px;
-        color: #AAAAAA !important;
+        color: #E5E7EB !important;
     }
     
     /* Radio Buttons */
@@ -132,6 +136,15 @@ st.markdown("""
         border-radius: 8px !important;
         transition: all 0.2s ease !important;
         border: 1px solid transparent !important;
+        color: #F9FAFB !important;
+        -webkit-text-fill-color: #F9FAFB !important;
+    }
+
+    .stRadio > div > label * {
+        color: #F9FAFB !important;
+        -webkit-text-fill-color: #F9FAFB !important;
+        opacity: 1 !important;
+        text-shadow: none !important;
     }
     
     .stRadio > div > label:hover {
@@ -140,14 +153,15 @@ st.markdown("""
     }
     
     .stRadio > div > label[data-checked="true"] {
-        background: #FFFFFF !important;
-        color: #000000 !important;
-        border-color: #FFFFFF !important;
+        background: rgba(255, 255, 255, 0.12) !important;
+        color: #F9FAFB !important;
+        border-color: rgba(255, 255, 255, 0.32) !important;
         font-weight: 600 !important;
     }
     
     .stRadio > div > label[data-checked="true"] * {
-        color: #000000 !important;
+        color: #F9FAFB !important;
+        -webkit-text-fill-color: #F9FAFB !important;
     }
     
     /* Checkbox */
@@ -179,22 +193,34 @@ st.markdown("""
         margin-bottom: 0.25rem;
     }
     
-    /* Brand Button */
-    button[key="brand_header"] {
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.12)) !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-        border-radius: 12px !important;
-        font-weight: 600 !important;
-        color: #FFFFFF !important;
-        transition: all 0.3s ease !important;
-        padding: 1.25rem !important;
+    /* Brand header card (stable, always readable) */
+    .brand-card {
+        background: #F3F4F6;
+        border: 1px solid #D1D5DB;
+        border-radius: 14px;
+        padding: 0.65rem 0.65rem;
+        text-align: center;
+        margin-bottom: 0.15rem;
     }
-    
-    button[key="brand_header"]:hover {
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.20)) !important;
-        border: 1px solid rgba(255, 255, 255, 0.4) !important;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(255, 255, 255, 0.1);
+
+    .brand-title {
+        margin: 0;
+        font-size: 1.55rem;
+        line-height: 1.25;
+        font-weight: 800;
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        opacity: 1 !important;
+        text-shadow: none !important;
+    }
+
+    .brand-subtitle {
+        margin: 0.2rem 0 0 0;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #374151 !important;
+        -webkit-text-fill-color: #374151 !important;
+        opacity: 1 !important;
     }
     
     /* Main Content Styling */
@@ -235,6 +261,27 @@ st.markdown("""
         box-shadow: var(--shadow-md);
         transform: translateY(-1px);
     }
+
+    /* Secondary buttons (used for Refresh) */
+    .stButton > button[kind="secondary"] {
+        background: #F3F4F6 !important;
+        color: #111827 !important;
+        border: 1px solid #D1D5DB !important;
+        box-shadow: none !important;
+    }
+
+    .stButton > button[kind="secondary"]:hover {
+        background: #E5E7EB !important;
+        color: #111827 !important;
+        border-color: #9CA3AF !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.12) !important;
+    }
+
+    .stButton > button[kind="secondary"]:active {
+        transform: translateY(0) scale(0.98) !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.10) !important;
+    }
     
     /* Expander */
     .streamlit-expanderHeader {
@@ -267,8 +314,10 @@ st.markdown("""
     }
     
     .stTabs [aria-selected="true"] {
-        background-color: var(--color-primary);
-        color: #FFFFFF;
+        background-color: #E5E7EB;
+        color: #111827;
+        border: 1px solid #D1D5DB;
+        box-shadow: inset 0 -3px 0 #FF4D4D;
     }
     
     /* Spinner */
@@ -315,17 +364,13 @@ if "refresh_interval" not in st.session_state:
 
 # Sidebar navigation
 with st.sidebar:
-    # Brand header - Clickable for home page
-    clicked_brand = st.button(
-        "🌍 CITY PULSE\n\nReal-time News Analytics",
-        key="brand_header",
-        use_container_width=True,
-        help="Go to home"
-    )
-    
-    if clicked_brand:
-        st.session_state.current_page = "1_City_Pulse"
-        st.rerun()
+    # Brand header
+    st.markdown("""
+    <div class="brand-card">
+        <p class="brand-title">🌍 CITY PULSE</p>
+        <p class="brand-subtitle">Real-time News Analytics</p>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
     
@@ -337,6 +382,15 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
+    page_labels = {
+        "1_City_Pulse": "City Pulse",
+        "2_Live_Feed": "Live Feed",
+        "3_Live_Map": "Geo Intelligence",
+        "4_Insights": "Insights",
+        "5_Event_Detail": "Event Detail",
+        "6_System_Insights": "System Insights",
+    }
+
     page = st.radio(
         "Select page",
         [
@@ -347,7 +401,7 @@ with st.sidebar:
             "5_Event_Detail",
             "6_System_Insights"
         ],
-        format_func=lambda x: x.replace('_', ' ').replace('1 ', '').replace('2 ', '').replace('3 ', '').replace('4 ', '').replace('5 ', '').replace('6 ', ''),
+        format_func=lambda x: page_labels.get(x, x),
         label_visibility="collapsed"
     )
     

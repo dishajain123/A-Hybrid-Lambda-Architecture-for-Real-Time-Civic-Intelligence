@@ -81,6 +81,14 @@ METRIC_DECIMALS = 2
 CHART_HEIGHT = 400
 SIDEBAR_WIDTH = 280
 
+# Shared Plotly layout used across dashboard pages
+PLOTLY_LAYOUT = {
+    "template": "plotly_white",
+    "paper_bgcolor": "rgba(0,0,0,0)",
+    "plot_bgcolor": "rgba(0,0,0,0)",
+    "font": {"family": "Arial, sans-serif", "size": 12, "color": "#111827"}
+}
+
 # Refresh intervals
 REFRESH_INTERVAL_SECONDS = 30
 AUTO_REFRESH_ENABLED = True
