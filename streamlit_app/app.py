@@ -62,7 +62,7 @@ section[data-testid="stSidebar"] > div:first-child { padding: 0 !important; }
     border: 1px solid transparent !important;
     border-radius: 9px !important;
     padding: .65rem 1rem !important;
-    color: #aaa !important;
+    color: #fff !important;
     font-size: .875rem !important;
     font-weight: 500 !important;
     cursor: pointer !important;
@@ -74,13 +74,23 @@ section[data-testid="stSidebar"] > div:first-child { padding: 0 !important; }
     color: #fff !important;
 }
 .stRadio > div > label[data-checked="true"] {
-    background: #fff !important;
-    color: #000 !important;
+    background: rgba(255,255,255,.16) !important;
+    color: #fff !important;
     font-weight: 700 !important;
     border-color: transparent !important;
 }
-.stRadio > div > label[data-checked="true"] p { color: #000 !important; }
-.stRadio > div > label p { color: inherit !important; margin: 0; }
+.stRadio > div > label,
+.stRadio > div > label *,
+.stRadio > div > label p,
+.stRadio > div > label span,
+.stRadio > div > label div,
+.stRadio > div > label[data-checked="true"] p,
+.stRadio > div > label[data-checked="true"] span,
+.stRadio > div > label[data-checked="true"] div {
+    color: #fff !important;
+    fill: #fff !important;
+}
+.stRadio > div > label p { margin: 0; }
 
 /* ── Sidebar widgets ── */
 section[data-testid="stSidebar"] .stCheckbox label { color: #bbb !important; font-size: .85rem !important; }
@@ -127,7 +137,14 @@ p { color: #333; line-height: 1.7; }
     border-radius: 7px; padding: .55rem 1.1rem;
     font-weight: 600; font-size: .83rem; color: #666;
 }
-.stTabs [aria-selected="true"] { background: #000; color: #fff; }
+.stTabs [aria-selected="true"] { background: #000; color: #fff !important; }
+.stTabs [aria-selected="true"] *,
+.stTabs [aria-selected="true"] p,
+.stTabs [aria-selected="true"] span,
+.stTabs [aria-selected="true"] div {
+    color: #fff !important;
+    fill: #fff !important;
+}
 
 /* Expander */
 .streamlit-expanderHeader { background: #f5f5f5; border-radius: 8px; font-weight: 600; color: #111; }

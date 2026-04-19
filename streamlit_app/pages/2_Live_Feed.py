@@ -65,6 +65,37 @@ _CSS = """
 }
 .extracted-link:hover { text-decoration:underline; }
 .extracted-link:last-child { border-bottom:none; }
+
+/* Force selected Live Feed tab text to white */
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    color: #fff !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] *,
+.stTabs [data-baseweb="tab"][aria-selected="true"] p,
+.stTabs [data-baseweb="tab"][aria-selected="true"] span,
+.stTabs [data-baseweb="tab"][aria-selected="true"] div {
+    color: #fff !important;
+    fill: #fff !important;
+}
+
+/* Force Live Feed refresh button text visibility */
+.stButton > button[kind="secondary"] {
+    background: #111 !important;
+    color: #fff !important;
+    border: 1px solid #2a2a2a !important;
+}
+.stButton > button[kind="secondary"]:hover {
+    background: #1f1f1f !important;
+    color: #fff !important;
+    border-color: #3a3a3a !important;
+}
+.stButton > button[kind="secondary"] *,
+.stButton > button[kind="secondary"] p,
+.stButton > button[kind="secondary"] span,
+.stButton > button[kind="secondary"] div {
+    color: #fff !important;
+    fill: #fff !important;
+}
 </style>
 """
 
