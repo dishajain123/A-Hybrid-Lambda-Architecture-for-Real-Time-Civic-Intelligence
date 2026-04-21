@@ -1,6 +1,7 @@
 import streamlit as st
 import plotly.graph_objects as go
 from urllib.parse import urlparse
+import re
 
 from components.header      import render_header, render_section_title, render_divider
 from components.severity_badge import sentiment_badge_html, inject_badge_css, get_severity_color
@@ -76,8 +77,202 @@ _CSS = """
 
 .pick-container { background:#f5f5f5; border-radius:12px; padding:1.25rem; margin-bottom:1.5rem; }
 .pick-label { font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:#888; margin-bottom:.75rem; }
+
+/* Make action buttons readable regardless of theme */
+div[data-testid="stButton"] > button {
+    background:#111 !important;
+    color:#fff !important;
+    border:1px solid #111 !important;
+}
+div[data-testid="stButton"] button[kind="primary"] {
+    background:#000 !important;
+    color:#fff !important;
+    border:1px solid #000 !important;
+}
+div[data-testid="stButton"] > button:hover {
+    background:#000 !important;
+    color:#fff !important;
+}
+div[data-testid="stButton"] > button *,
+div[data-testid="stButton"] > button span,
+div[data-testid="stButton"] > button p {
+    color:#fff !important;
+    -webkit-text-fill-color:#fff !important;
+    opacity:1 !important;
+}
+div[data-testid="stButton"] > button:disabled,
+div[data-testid="stButton"] > button:disabled * {
+    color:#fff !important;
+    -webkit-text-fill-color:#fff !important;
+    opacity:1 !important;
+}
+
+/* Sentiment explanation card */
+.sentiment-reason-card {
+    background:#f8fafc;
+    border:1.5px solid #e5e7eb;
+    border-radius:12px;
+    padding:.7rem .85rem;
+    margin:.3rem 0 .55rem;
+}
+.sentiment-reason-title {
+    font-size:.82rem;
+    font-weight:800;
+    color:#111;
+    margin:0 0 .35rem;
+}
+.sentiment-reason-chip {
+    display:inline-block;
+    font-size:.72rem;
+    font-weight:700;
+    border-radius:999px;
+    padding:.2rem .55rem;
+    background:#e5e7eb;
+    color:#1f2937;
+    margin-bottom:.45rem;
+}
+.sentiment-reason-line {
+    font-size:.82rem;
+    color:#374151;
+    line-height:1.45;
+    margin:.12rem 0;
+}
+.sentiment-score-wrap p {
+    margin-top:0;
+    margin-bottom:.45rem;
+}
+.sentiment-left-head {
+    margin:0 0 .2rem;
+}
+.sentiment-right-wrap {
+    margin-top:-.15rem;
+}
 </style>
 """
+
+_POSITIVE_KEYWORDS = {
+    "deal", "slashed", "cut", "reduced", "reduction", "growth", "record", "rally",
+    "surge", "jumped", "up", "profit", "beat", "boost", "improve", "improved",
+    "good", "wins", "launch", "launched", "signed", "achievement", "exemption",
+    "jobs", "capacity", "milestone", "opened", "support", "success", "successful",
+    "faster", "ahead", "renewable"
+}
+_NEGATIVE_KEYWORDS = {
+    "kills", "killed", "dead", "death", "injured", "collapse", "trapped", "violence",
+    "crash", "malfunction", "grounded", "flood", "floods", "delayed", "disrupted",
+    "toxic", "arrested", "damage", "loss", "decline", "fall", "suspended", "curfew",
+    "outbreak", "risk", "warning", "trouble", "failure"
+}
+
+
+def _split_sentences(text: str):
+    if not text:
+        return []
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    return [p.strip() for p in parts if p and len(p.strip()) > 20]
+
+
+def _extract_key_points(text: str, max_points: int = 3):
+    sentences = _split_sentences(text)
+    if not sentences:
+        return []
+    ranked = sorted(
+        sentences,
+        key=lambda x: (
+            bool(re.search(r"\d", x)),
+            any(k in x.lower() for k in ("because", "after", "following", "due to", "led", "will", "would")),
+            len(x)
+        ),
+        reverse=True
+    )
+    points = []
+    for sent in ranked:
+        clean = sent.strip().rstrip(".")
+        if clean and clean not in points:
+            points.append(clean)
+        if len(points) >= max_points:
+            break
+    return points
+
+
+def _build_summary_display(article: dict):
+    base_summary = (article.get("summary") or "").strip()
+    full_text = (article.get("text") or "").strip()
+
+    if not base_summary and not full_text:
+        return None, []
+    if not base_summary:
+        base_summary = _split_sentences(full_text)[0] if _split_sentences(full_text) else "No summary available."
+
+    key_points = _extract_key_points(full_text, max_points=3)
+    key_points = [p for p in key_points if p.lower() not in base_summary.lower()]
+    return base_summary, key_points
+
+
+def _compute_sentiment_explanation(article: dict):
+    score = float(article.get("sentiment", 0.0) or 0.0)
+    label = "Positive" if score > 0.2 else ("Negative" if score < -0.2 else "Neutral")
+    strength = (
+        "strongly" if abs(score) >= 0.7
+        else "clearly" if abs(score) >= 0.45
+        else "slightly" if abs(score) >= 0.2
+        else "mostly"
+    )
+
+    evidence_source = " ".join([
+        str(article.get("title", "")),
+        str(article.get("summary", "")),
+        str(article.get("text", ""))
+    ])
+    text_blob = evidence_source.lower()
+    tokens = set(re.findall(r"[a-zA-Z]+", text_blob))
+
+    pos_hits = sorted([k for k in _POSITIVE_KEYWORDS if k in tokens or f" {k} " in text_blob])
+    neg_hits = sorted([k for k in _NEGATIVE_KEYWORDS if k in tokens or f" {k} " in text_blob])
+    evidence_points = _extract_key_points(evidence_source, max_points=2)
+
+    if label == "Positive":
+        reasons = [
+            f"This story is {strength} positive because it mainly reports gains, progress, or relief."
+        ]
+        if evidence_points:
+            reasons.append(f"What happened: {evidence_points[0]}.")
+        if len(evidence_points) > 1:
+            reasons.append(f"Why people may see this as good: {evidence_points[1]}.")
+        reasons.append("In simple terms: this usually suggests better outcomes for people, markets, or services.")
+    elif label == "Negative":
+        reasons = [
+            f"This story is {strength} negative because it mainly reports harm, disruption, or risk."
+        ]
+        if evidence_points:
+            reasons.append(f"What happened: {evidence_points[0]}.")
+        if len(evidence_points) > 1:
+            reasons.append(f"Why people may see this as bad: {evidence_points[1]}.")
+        reasons.append("In simple terms: this can mean more stress, cost, safety concerns, or uncertainty for people.")
+    else:
+        reasons = [
+            "This story is neutral because it is mostly factual or has mixed good and bad signals."
+        ]
+        if evidence_points:
+            reasons.append(f"What happened: {evidence_points[0]}.")
+        if len(evidence_points) > 1:
+            reasons.append(f"Context: {evidence_points[1]}.")
+        reasons.append("In simple terms: this is informative, but not strongly good or bad overall.")
+
+    if label == "Positive" and neg_hits:
+        reasons.append("Note: there are a few caution signals too, so this is positive but not perfect.")
+    if label == "Negative" and pos_hits:
+        reasons.append("Note: there are a few positive points, but negatives dominate the story.")
+
+    return label, strength, reasons
+
+
+def _shorten_for_ui(text: str, limit: int = 115) -> str:
+    t = (text or "").strip()
+    if len(t) <= limit:
+        return t
+    cut = t[:limit].rsplit(" ", 1)[0].rstrip(" ,;:")
+    return f"{cut}..."
 
 
 def _is_valid_media_url(url: str) -> bool:
@@ -103,6 +298,12 @@ def _is_valid_video_url(url: str) -> bool:
     return any(h in u for h in video_hints)
 
 
+def _normalize_media_url(url: str) -> str:
+    if not isinstance(url, str):
+        return ""
+    return url.strip().rstrip("/").lower()
+
+
 def _render_image_compat(url: str):
     """Render image across Streamlit versions (old/new width args)."""
     try:
@@ -110,6 +311,14 @@ def _render_image_compat(url: str):
     except TypeError:
         # Older Streamlit uses use_column_width
         st.image(url, use_column_width=True)
+
+
+def _render_gallery_image_compat(url: str, width: int = 220):
+    """Render smaller gallery thumbnail across Streamlit versions."""
+    try:
+        st.image(url, width=width)
+    except TypeError:
+        st.image(url)
 
 def render():
     st.markdown(_CSS, unsafe_allow_html=True)
@@ -141,7 +350,7 @@ def render():
         selected_title = st.selectbox("Article", titles, index=default_idx, label_visibility="collapsed")
     with col_rand:
         import random
-        if st.button("🎲 Random", use_container_width=True):
+        if st.button("🎲 Random", use_container_width=True, type="primary", key="random_article_btn"):
             selected_title = random.choice(titles)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -190,12 +399,18 @@ def render():
 
     with col_main:
         # Summary
-        summary = article.get("summary","")
+        summary, key_points = _build_summary_display(article)
         if summary:
+            points_html = ""
+            if key_points:
+                points_html = "<ul style='margin:.65rem 0 0 1.1rem;padding:0;color:#333;font-size:.86rem;line-height:1.6'>"
+                points_html += "".join(f"<li>{p}</li>" for p in key_points)
+                points_html += "</ul>"
             st.markdown(f"""
             <div class="detail-body">
               <h4>📝 Summary</h4>
               <p style="margin:0;font-size:.9rem;line-height:1.75;color:#333">{summary}</p>
+              {f"<h4 style='margin-top:.9rem'>Key Context from Article</h4>{points_html}" if points_html else ""}
             </div>
             """, unsafe_allow_html=True)
 
@@ -203,27 +418,40 @@ def render():
         images = [img for img in (article.get("images") or []) if _is_valid_media_url(img.get("url", ""))]
         hero_image = article.get("image")
         has_valid_hero = _is_valid_media_url(hero_image)
+        hero_norm = _normalize_media_url(hero_image) if has_valid_hero else ""
 
         if has_valid_hero:
             render_section_title("Primary Image")
             _render_image_compat(hero_image)
 
         if images:
-            render_section_title(f"Image Gallery ({len(images)} images)")
-            st.markdown('<div class="img-gallery">', unsafe_allow_html=True)
-            for img in images[:6]:
-                url = img.get("url","")
-                w   = img.get("width", 400)
-                h   = img.get("height", 300)
-                ttl = img.get("title","") or ""
-                if _is_valid_media_url(url):
-                    st.markdown(f"""
-                    <div class="img-thumb" style="width:180px">
-                      <img src="{url}" width="180" height="110" alt="{ttl}">
-                      <div class="img-dim">{w}×{h}px{' · ' + ttl if ttl else ''}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+            gallery_images = []
+            seen_urls = set()
+            for img in images:
+                raw_url = img.get("url", "")
+                norm_url = _normalize_media_url(raw_url)
+                if not norm_url or norm_url in seen_urls:
+                    continue
+                if hero_norm and norm_url == hero_norm:
+                    continue
+                seen_urls.add(norm_url)
+                gallery_images.append(img)
+
+            if gallery_images:
+                render_section_title(f"Image Gallery ({len(gallery_images)} images)")
+                gallery_images = gallery_images[:6]
+                cols_per_row = min(3, len(gallery_images))
+                for row_start in range(0, len(gallery_images), cols_per_row):
+                    row_items = gallery_images[row_start: row_start + cols_per_row]
+                    row_cols = st.columns(cols_per_row)
+                    for i, img in enumerate(row_items):
+                        url = img.get("url", "")
+                        w = img.get("width", 400)
+                        h = img.get("height", 300)
+                        ttl = img.get("title", "") or ""
+                        with row_cols[i]:
+                            _render_gallery_image_compat(url, width=220)
+                            st.caption(f"{w}×{h}px{' · ' + ttl if ttl else ''}")
 
         # Video field
         video = article.get("video")
@@ -298,13 +526,20 @@ def render():
 
         # Sentiment gauge
         render_section_title("Sentiment Analysis")
-        col_g, col_txt = st.columns([1, 1])
+        col_g, col_txt = st.columns([1.1, 1.35])
         with col_g:
+            mood = "Positive 📈" if s>0.2 else ("Negative 📉" if s<-0.2 else "Neutral ◆")
+            st.markdown(f"""
+            <div class="sentiment-left-head">
+              <p style="font-size:.82rem;color:#666;margin-bottom:.3rem">Sentiment Score</p>
+              <p style="font-size:2.8rem;font-weight:900;color:{color};margin:0;line-height:1">{s:+.3f}</p>
+              <p style="font-size:1rem;font-weight:700;color:#111;margin:.25rem 0 .3rem">{mood}</p>
+            </div>
+            """, unsafe_allow_html=True)
             fig_g = go.Figure(go.Indicator(
-                mode="gauge+number",
+                mode="gauge",
                 value=round(s, 3),
                 domain={"x":[0,1], "y":[0,1]},
-                number={"font":{"size":32,"color":"#000"}},
                 gauge={
                     "axis":{"range":[-1,1], "tickvals":[-1,-.5,0,.5,1]},
                     "bar":{"color":color, "thickness":.2},
@@ -317,22 +552,22 @@ def render():
                     "threshold":{"line":{"color":color,"width":4},"thickness":.8,"value":s},
                 },
             ))
-            fig_g.update_layout(paper_bgcolor="rgba(0,0,0,0)", height=220,
-                                margin=dict(l=20,r=20,t=30,b=10))
+            fig_g.update_layout(paper_bgcolor="rgba(0,0,0,0)", height=250,
+                                margin=dict(l=20,r=20,t=10,b=10))
             st.plotly_chart(fig_g, use_container_width=True)
 
         with col_txt:
-            mood = "Positive 📈" if s>0.2 else ("Negative 📉" if s<-0.2 else "Neutral ◆")
+            sentiment_label, sentiment_strength, sentiment_reasons = _compute_sentiment_explanation(article)
+            reasons_html = "".join(
+                f"<p class='sentiment-reason-line'>• {_shorten_for_ui(r)}</p>" for r in sentiment_reasons[:3]
+            )
             st.markdown(f"""
-            <div style="padding:1rem 0">
-              <p style="font-size:.82rem;color:#666;margin-bottom:.4rem">Sentiment Score</p>
-              <p style="font-size:2.8rem;font-weight:900;color:{color};margin:0;line-height:1">{s:+.3f}</p>
-              <p style="font-size:1rem;font-weight:700;color:#111;margin:.3rem 0 .8rem">{mood}</p>
-              <p style="font-size:.8rem;color:#666;line-height:1.6">
-                <strong>-1.0</strong> = highly negative<br>
-                <strong>±0.0</strong> = neutral zone<br>
-                <strong>+1.0</strong> = highly positive
-              </p>
+            <div class="sentiment-right-wrap" style="padding:.05rem 0 0">
+              <div class="sentiment-reason-card">
+                <p class="sentiment-reason-title">Why this is {sentiment_label.lower()}</p>
+                <span class="sentiment-reason-chip">{sentiment_strength.title()} {sentiment_label}</span>
+                {reasons_html}
+              </div>
             </div>
             """, unsafe_allow_html=True)
 
