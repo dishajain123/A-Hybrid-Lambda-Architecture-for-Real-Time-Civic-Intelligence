@@ -2,7 +2,7 @@
 """
 Speed Layer Producer - Fetches from 7 News APIs -> Kafka
 Real-time ingestion for MongoDB consumption
-CORRECTED FIX: Properly stream top_news by extracting only essential cluster metadata
+Streams endpoint payloads to Kafka with size-safe top_news cluster extraction
 """
 
 import json
@@ -124,6 +124,51 @@ class SpeedLayerProducer:
             f"max_request_size={Settings.KAFKA_MAX_REQUEST_SIZE}"
         )
 
+    @staticmethod
+    def _truncate(value, limit: int):
+        if not isinstance(value, str):
+            return value
+        v = value.strip()
+        if len(v) <= limit:
+            return v
+        return v[:limit].rstrip() + "..."
+
+    def _compact_top_news_article(self, article: dict) -> dict:
+        """Keep relevant extracted fields while controlling payload size."""
+        if not isinstance(article, dict):
+            return {}
+        compact = {
+            "id": article.get("id"),
+            "title": self._truncate(article.get("title", ""), 260),
+            "summary": self._truncate(article.get("summary", ""), 520),
+            "text": self._truncate(article.get("text", ""), 1800),
+            "url": article.get("url"),
+            "image": article.get("image"),
+            "images": article.get("images", [])[:3] if isinstance(article.get("images"), list) else [],
+            "video": article.get("video"),
+            "publish_date": article.get("publish_date"),
+            "author": article.get("author"),
+            "authors": article.get("authors", [])[:3] if isinstance(article.get("authors"), list) else [],
+            "language": article.get("language", "en"),
+            "category": article.get("category"),
+            "source_country": article.get("source_country"),
+            "sentiment": article.get("sentiment"),
+            "entities": article.get("entities", [])[:8] if isinstance(article.get("entities"), list) else []
+        }
+        return {k: v for k, v in compact.items() if v is not None}
+
+    def _build_top_news_cluster_payload(self, cluster: dict, idx: int, total_clusters: int) -> dict:
+        news_items = cluster.get("news", []) if isinstance(cluster.get("news"), list) else []
+        compact_news = [self._compact_top_news_article(item) for item in news_items[:5] if isinstance(item, dict)]
+        return {
+            "cluster_index": idx,
+            "total_clusters": total_clusters,
+            "cluster_id": cluster.get("_id", "unknown"),
+            "cluster_title": self._truncate(cluster.get("title", "untitled"), 200),
+            "article_count": len(news_items),
+            "news": compact_news
+        }
+
     def _send_payload(self, endpoint: str, payload: dict) -> bool:
         """Send a single payload with size guard."""
         payload_bytes = json.dumps(payload).encode('utf-8')
@@ -185,29 +230,22 @@ class SpeedLayerProducer:
             logger.warning(f"Skipping send for {endpoint} - no data returned")
             return False
 
-        # Safety: if top_news accidentally comes as full clusters, split here
+        # Safety: if top_news comes as full clusters, split into one Kafka message per cluster
         if endpoint == 'top_news' and isinstance(data, dict) and 'top_news' in data:
             clusters = data['top_news']
             total_clusters = len(clusters)
-            logger.info("  → Detected full top_news payload; splitting into clusters")
+            logger.info("  → Detected full top_news payload; splitting into cluster messages with articles")
             success_count = 0
 
             for idx, cluster in enumerate(clusters, 1):
-                cluster_metadata = {
-                    'cluster_index': idx,
-                    'total_clusters': total_clusters,
-                    'cluster_id': cluster.get('_id', 'unknown'),
-                    'cluster_title': cluster.get('title', 'untitled')[:200],
-                    'article_count': len(cluster.get('news', [])),
-                    'cluster_size_mb': 'extracted_separately'
-                }
+                cluster_payload = self._build_top_news_cluster_payload(cluster, idx, total_clusters)
 
                 message = {
                     'timestamp': datetime.utcnow().isoformat(),
                     'endpoint': endpoint,
                     'source': 'world_news_api',
                     'layer': 'speed',
-                    'data': cluster_metadata
+                    'data': cluster_payload
                 }
 
                 try:
@@ -261,23 +299,7 @@ class SpeedLayerProducer:
     
     
     def fetch_top_news(self):
-        """Endpoint 2: Top News - CORRECTED with proper clustering
-        
-        CRITICAL FIX:
-        The API returns 248 clusters, each with ~3 articles inside.
-        Each full cluster object can be 10KB+ due to embedded article content.
-        
-        Solution: Extract ONLY cluster metadata (title, id, count) and stream individually.
-        This reduces ~2.6MB to ~1KB per message = 248 individual messages.
-        
-        Before (BROKEN):
-        - Tried to wrap raw cluster objects → still ~2.6MB total
-        
-        After (FIXED):
-        - Extract minimal metadata per cluster
-        - Send as separate Kafka messages
-        - Total payload per message: ~1KB
-        """
+        """Endpoint 2: Top News - stream one cluster per message with extracted article content."""
         logger.info("Fetching top_news")
         
         data = self.api_client.get_top_news()
@@ -285,27 +307,16 @@ class SpeedLayerProducer:
             clusters = data['top_news']
             total_clusters = len(clusters)
             logger.info(f"  → Found {total_clusters} news clusters")
-            logger.info(f"  → STREAMING CLUSTERS INDIVIDUALLY (metadata only)")
+            logger.info("  → STREAMING CLUSTERS INDIVIDUALLY (with compact articles)")
             
             success_count = 0
             failed_count = 0
             
-            # Process EACH cluster individually - extract metadata only
+            # Process EACH cluster individually
             for idx, cluster in enumerate(clusters, 1):
                 try:
-                    # CORRECTED: Extract ONLY minimal metadata from cluster
-                    # Do NOT include the full cluster object with embedded articles
-                    cluster_metadata = {
-                        'cluster_index': idx,
-                        'total_clusters': total_clusters,
-                        'cluster_id': cluster.get('_id', 'unknown'),
-                        'cluster_title': cluster.get('title', 'untitled')[:200],  # Truncate long titles
-                        'article_count': len(cluster.get('news', [])),
-                        'cluster_size_mb': 'extracted_separately'  # Indicate articles available via API
-                    }
-                    
-                    # Send this minimal metadata as a separate message
-                    success = self.send_to_kafka('top_news', cluster_metadata)
+                    cluster_payload = self._build_top_news_cluster_payload(cluster, idx, total_clusters)
+                    success = self.send_to_kafka('top_news', cluster_payload)
                     
                     if success:
                         success_count += 1
